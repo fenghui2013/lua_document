@@ -1,0 +1,640 @@
+4 应用程序接口
+    本章描述Lua的C API，即主程序可用的C函数集用来于Lua通信。所有的API函数和相关的类型和常量都声明在头文件lua.h中。
+    尽管我们使用函数这个概念，API中的一些函数可能是使用宏(macro)实现的。除了另有说明，所有的宏仅使用参数一次(除了第一个参数L-
+ua state)，因此不会产生副作用。
+    和大多数的C库一样，Lua API函数不会检查参数的合法性和一致性。然而，你可以通过定义LUA_USE_APICHECK宏编译Lua来改变这种行为。
+
+4.1 栈
+    Lua使用虚拟栈(virtual stack)来与C传递值。栈里的每个元素代表了一个Lua值(nil, number, string等)。
+    无论何时Lua调用C，被调用的函数会获得一个新的栈，此栈独立的，和仍然活着的C函数使用的栈不一样。该栈初始化包含了C函数的参数
+，并且也是C函数返回给调用者结果的地方。(see lua_CFunction)
+    为了方便，大多数API里的栈操作并没有遵循严格的栈操作。相反，他们可以使用索引引用栈里的任何元素:正数表示绝对的栈位置(从1开
+始);负数表示相对栈顶的位置。更具体的说，如果栈有n个元素，那么索引1代表第一个元素(即，该元素是第一个被压入栈的)和n代表最后一个
+元素;索引-1代表最后一个元素(即，顶端的元素)和索引-n代表第一个元素。
+
+4.2 栈的大小
+    当你使用Lua API交互时，有责任确保一致性。特别的，你要确保栈不会溢出。你能使用函数lua_checkstack来确保当压入新元素时有额外
+的槽(slot)。
+    无论何时Lua调用C时，它确保栈至少有LUA_MINSTACK个额外的槽。LUA_MINSTACK定义为20，因此通常情况下，你不必担心栈空间问题，除
+非你的代码循环的压元素入栈。
+    当你调用Lua函数没有固定的结果时(see lua_call)，Lua确保栈有足够的空间保存所有的结果，但是它不确保有额外的空间。因此在入栈
+之前，你应该使用lua_checkstack检查是否有额外的空间。
+
+4.3 有效的和可接受的索引
+    接受栈的API里的所有函数仅当是合法的或者可接受的索引时才工作。
+    一个合法的索引指的是栈里真实存在的位置，即在1到栈顶n之间的位置。通常情况下，修改某索引下的值的函数需要有效的索引。
+    除非另有说明，接受合法指针的任何函数也接受伪指针。该伪指针代表了可被C代码访问的Lua值，但是又不在栈中。伪指针被用来访问寄
+存器和C函数的upvalues。(see 4.4)
+    那些不需要特定栈位置，仅需要栈中值的函数以可接受的指针被调用。可接受的指针是包括伪指针在内的任何有效的指针，但是也包括任
+何栈空间内的栈顶之外的索引。(注意0从来不是一个可接受的索引)除非另作说明，API里的函数以可接受的索引工作。
+    可接受的指针有助于在查询栈时避免对站定做额外的测试。例如，C函数查询第三个参数时，不必检查是否有第三个参数，即不必检查第三
+个参数是否是有效指针。
+    对于以可接受的索引被调用的函数，任何非合法的指针仅被当作虚拟类型LUA_TNONE,即nil值。
+
+4.4 C闭包(C closures)
+    当C函数被创建的时候，可能会关联某些值，因此创建了一个C的闭包。(see lua_pushcclosure)这些值被称为upvalues和无论何时被调用
+这些值都是可访问的。
+    无论何时C函数被创建，它的upvalues位于特殊的伪指针。这些伪指针由宏lua_upvalueindex产生。和函数关联的第一个值在位置lua_upv-
+alueindex(1)，以此类推。任何对lua_upvalueindex(n)的访问，其中n大于当前函数upvalues的数量，产生一个可访问的但是无效的指针。
+
+4.5 注册表(registry)
+    Lua提供了一个注册表，一个预定义的table，被C代码用来存储它需要存储的任何Lua值。注册表总是位于伪索引LUA_REGISTRYINDEX,一个
+有效的索引。任何C库能存储数据在这个表中，但是为了避免冲突，它应该注意选择不同于其他库使用的键。典型的，你应该使用包含库名字的
+键或者带有C对象地址的light userdata或者被你创建的Lua对象。和全局名字一样，以下划线开始加大写字母的字符串键被Lua保留。
+    注册表里的整数键被引用机制使用，被扩展库和一些预定义值实现。因此，整数键不应该被用作其他用途。
+    当你创建一个新的Lua状态(Lua state)时，带有预定义值的注册表被随之创建。这些预定义的值能被定义在lua.h中的常量索引。以下常量
+被定义：
+    * LUA_RIDX_MAINTHREAD: 在这个索引上注册表有此状态的主线程。(主线程是和状态一起被创建的)
+    * LUA_RIDX_GLOBALS: 在这个索引上注册表有全局环境。
+
+4.6 C里的错误处理
+    内部实现上，Lua使用C的longjmp机制处理错误。(如果你使用C++编译Lua，你也可以选择使用异常;在源代码中搜索LUAI_THROW)当Lua遇到
+错误时(例如内存申请错误，类型错误，语法错误和运行时错误)，它会抛出异常;即，有一个long jump。被保护的环境使用setjump来设置恢复
+点;任何错误跳至最近活动的恢复点。
+    如果错误发生在被保护环境的外面，Lua调用panic函数(see lua_atpanic)并且随后调用abort，因此退出主程序。通过不返回，你的panic
+函数可以避免这个退出。(例如，做一个long jump到你自己的Lua外的恢复点)
+    panic函数就想一个消息处理器一样(see 2.3)。特别的，错误消息在栈顶。然而，不保证栈空间。为了压数据入栈，panic函数首先应该核
+对可用的空间(see 4.2)。
+    API里的大多数函数抛出错误，例如由于内存申请错误。每个函数的文档说明了是否会抛出错误。
+    在C函数里通过调用lua_error抛出错误。
+
+4.7 C里处理yields
+    内部实现上，Lua使用C的longjmp机制来放弃一个协程(yield a coroutine)。因此，如果函数foo调用API函数并且这个API函数yield(直接
+或间接的调用一个yields的函数)，Lua不再返回到foo，因为longjmp从C栈里移除了它的帧。
+    为了避免这类问题，当尝试API调用时yield，Lua会抛出一个错误。这些API调用除了以下三个函数:lua_yieldk，lua_callk和lua_pcallk
+。所有这些函数接受一个continuation函数(作为调用k的参数)来在yield后继续执行。
+    我们需要定义一些术语来解释continuations。我们有一个Lua调用的C函数，这个C函数被称为原始函数(original function)。原始函数随
+后调用C API里的这三个函数之一，这些函数被称为callee function, 会yields当前线程。(当callee function是lua_yieldk或者lua_callk或
+者lua_pcallk并且被他们调用的函数yields)
+    假设当执行callee函数时，正在运行的线程yields。在线程resumes后，它最终将会完成运行callee函数。然而，callee函数不会返回到o-
+riginal函数，因此在C栈里的帧被yield毁掉了。相反，Lua调用continuation函数，该函数作为参数传递给callee函数。正如名字所暗示的那
+样，continuation函数应该继续original函数的任务。
+    Lua将continuation函数看作original函数。continuation函数接受来自original函数的同样的Lua栈。在同一个状态里就好像callee函数
+返回。(例如，在lua_callk后，函数和参数从栈中被移除并且替换成来自调用的结果)它也有同样的upvalues。无论何时返回在Lua里就好像是
+从original函数返回一样。
+    在original函数和它的continuation函数在Lua状态里唯一不同的是lua_getctx的结果。
+
+4.8 函数和类型
+    我们在这里按字母顺序列出了来自C API的所有函数和类型。每个函数有如下的指示器:  [-o, +p, x]
+    第一个字段o是该函数从栈中弹出多少元素。第二个字段p是该函数压入栈中多少个元素。(任何函数在弹出参数后总可以压入结果。)形式x
+|y字段表示根据情况压入或者弹出x或者y元素。问号标记?意味着我们根据参数得知函数压入或者弹出多少元素(例如，它们依赖栈中的内容)。
+第三个字段x告知函数是否会弹出错误:'-'意味着函数从来都不会抛出错误;'e'意味着函数也许会抛出错误;'v'意味着函数也许会故意抛出一个
+错误。
+    * lua_absindex
+    int lua_absindex(lua_State *L, int idx); [-0, +0, -]
+    将一个可接受的索引idx转化为一个绝对索引(即，不依赖栈顶的索引)
+    * lua_Alloc
+    typedef void *(*lua_Alloc)(void *ud, void *ptr, size_t osize size_t nsize);
+    被Lua states使用的内存申请函数的类型。申请函数必须提供和realloc类似的功能，但是不一定完全一样。它的参数是ud，一个传递到l-
+ua_newstate的opaque指针;ptr，一个被申请的内存块的指针;osize，内存块的初始大小或者是将要被申请的大小;nsize，内存块的新大小。
+    当ptr不是NULL时，osize是ptr指向的内存块的大小。
+    当ptr是NULL时，oszie编码Lua正在申请的对象的类型。osize可以是LUA_TSTRING,LUA_TTABLE,LUA_TFUNCTION,LUA_TUSERDATA或者LUA_TT-
+HREAD当Lua正在创建那种类型的新对象时。当osize是一些其他值时，Lua申请内存为了其他目的。
+    Lua假设申请函数有如下行为：
+    当nsize是0时，申请器应该像free一样和返回NULL。
+    当nsize不是0时，申请器应该和realloc一样。申请器返回NULL当且仅当不能满足请求时。Lua假设当osize>=nsize时，申请器从来不会失
+败。
+    * lua_arith
+    void lua_arith(lua_State *L, int op); [-(2|1), +1, e]
+    利用栈顶的两个值(或者一个值)执行算术运算，栈顶的值是第二个操作数，弹出这些值，并且压入操作结果。该函数遵循相应Lua的操作语
+法(即，它也许会调用元方法)。
+    op的值一定是下列常量之一:
+        * LUA_OPADD: +
+        * LUA_OPSUB: -
+        * LUA_OPMUL: *
+        * LUA_OPDIV: /
+        * LUA_OPMOD: %
+        * LUA_OPPOW: ^
+        * LUA_OPUNM: unary -
+    * lua_atpanic
+    lua_CFunction lua_atpanic(lua_State *L, lua_CFunction panicf); [-0, +0, -]
+    设置panic函数和返回旧的(see 4.6)
+    * lua_call
+    void lua_call(lua_State *L, int nargs, int nresults); [-(nargs+1), +nresults, e]
+    调用一个函数。
+    为了调用一个函数，你必须使用如下协议:首先将要被调用的函数压入栈;随后函数的参数以直接的顺序被压入栈中;即，第一个参数首先被
+压入。最后调用lua_call;nargs是你压入栈的参数数量。当函数被调用时，所有的参数和函数从栈中弹出。当函数返回的时候函数结果被压入
+栈中。结果的数量调整到nresults，除非nresults是LUA_MULTRET。在那种情况下，函数的所有结果都被压入栈中。Lua会使返回的值适应栈的
+空间。函数的结果以顺序压入栈中(第一个值首先被压入)，因此在调用之后，最后的结果在栈顶。
+    被调用函数内部的错误会被向上传播(用longjmp)。
+    * lua_callk
+    void lua_callk(lua_State *L, int nargs, int nresults, int ctx, lua_CFunction k); [-(nargs+1), +nresults, e]
+    该函数行为与lua_call类似，但是允许被调用的函数yield(see 4,7)
+    * lua_CFunction
+    typedef int (*lua_CFunction) (lua_State *L);
+    C函数的类型。
+    为了和Lua正确地交互，C函数必须使用如下协议(定义了参数和结果被传递的方法):C函数以顺序(第一个参数第一个被压入)从Lua中接收参
+数。因此，当函数开始时，lua_gettop(L)返回函数接收到的参数数量。第一个参数在索引1和最后一个参数在索引lua_gettop(L)。为了返回值
+到Lua，C函数仅以顺序压入他们到栈，并且返回结果的数量。在结果下的任何其他值将被Lua恰当的删除掉。像Lua函数一样，被Lua调用的C函
+数也会返回许多结果。
+    * lua_checkstack
+    int lua_checkstack(lua_State *L, int extra); [-0, +0, -]
+    确保在栈中至少有额外的空闲槽。如果不能满足请求，将会返回false，因为它会导致栈比固定最大值还要大(典型的，至少几千元素)或者
+因为它不能为新的栈大小申请内存。该函数从来不会缩减栈。如果栈必新的大小更大，什么都不做。
+    * lua_close
+    void lua_close(lua_State *L); [-0, +0, -]
+    删除被给Lua state中的所有对象(如果可能的话，调用相应的垃圾收集方法)和释放被该state使用的动态内存。在一些平台上，你不必调
+用该函数，因为当主程序结束时，所有资源被自动释放。换言之，创建多个state且长时间运行的程序，例如守护进程或者网站服务，可能需要
+尽快关掉这些states只要不再需要。
+    * lua_compare
+    int lua_compare(lua_State *L, int index1, int index2, int op); [-0, +0, e]
+    比较两个Lua值。如果index1处的值与index2处的值满足op则返回1，否则返回0。并且如果索引无效，也返回0。
+    op的值必须是下列常量:
+        * LUA_OPEQ: ==
+        * LUA_OPLT: <
+        * LUA_OPLE: <=
+    * lua_concat
+    void lua_concat(lua_State *L, int n); [-n, +1, e]
+    连接栈顶的n个值，弹出他们，并且压结果入栈。如果n是1，结果就是栈顶的值(即，函数什么也没做);如果n是0，结果是空字符串。连接
+操作遵循Lua的语义(see 3.4.5)。
+    * lua_copy
+    void lua_copy(lua_State *L, int fromidx, int toidx); [-0, +0, -]
+    将fromidx处的值移到toidx处，且不移动任何元素(因此替代那个位置的值)。
+    * lua_createtable
+    void lua_createtable(lua_State *L, int narr, int nrec); [-0, +1, e]
+    创建一个新的空的table并且压入栈。参数narr暗示table有多少元素;参数nrec暗示table还可填入多少元素。Lua使用这些暗示来为新tab-
+le预分配内存。当你提前知道table需容纳多少元素时，这个预分配有助于提高性能。不然，你可以使用函数lua_newtable。
+    * lua_dump
+    int lua_dump(lua_State *L, lua_Writer writer, void *data);
+    将函数转储为二进制块。接收栈顶的Lua函数并且产生二进制块。如果再次被加载，函数的结果与转储的相同。由于产生代码块的一部分，
+lua_dump调用函数writer(see lua_Writer)和被给的数据来写。
+    返回值是最后一次调用writer返回的错误代码;0意味着没有错误。
+    该函数不会从栈中弹出Lua函数。
+    * lua_error
+    int lua_error(lua_State *L); [+1, -0, v]
+    生成Lua错误。错误消息(实际上可以是任何类型的Lua值)必须在栈顶。该函数调用long jump，因此不会返回。(see luaL_error)。
+    * lua_gc
+    int lua_gc(lua_State *L, int what, int data); [-0, +0, e]
+    控制垃圾收集器。
+    该函数执行几个任务，依据参数what的值:
+        * LUA_GCSTOP: 停止垃圾回收器
+        * LUA_GCRESTART: 重启垃圾回收器
+        * LUA_GCCOLLECT: 执行一个完整的垃圾收集循环
+        * LUA_GCCOUNT: 返回当前被Lua使用的内存数量
+        * LUA_GCCOUNTB: 返回被Lua使用的内存的字节数
+        * LUA_GCSTEP: 执行递增的垃圾回收。"size"被data控制。
+        * LUA_GCSETPAUSE: 设置data作为垃圾收集器pause的新值(see 2.5)。该函数返回之前的pause值。
+        * LUA_GCSETSTEPMUL: 设置data作为垃圾收集器step multiplier的新值(see 2.5)。该函数返回之前的step multiplier值。
+        * LUA_GCISRUNNING: 返回一个布尔值告知垃圾收集器是否在运行。
+        * LUA_GCGEN: 改变垃圾收集器到generational模式
+        * LUA_GCINC: 改变垃圾收集器到incremental模式。这是默认模式。
+    为了这些选项的更多细节，看collectgarbage。
+    * lua_getallocf
+    lua_Alloc lua_getallocf(lua_State *L, void **ud); [-0, +0, -]
+    返回被给状态的内存申请函数。如果ud不为NULL，Lua存储在*ud里，该值是传给lua_newstate的值。
+    * lua_getctx
+    int lua_getctx(lua_State *L, int *ctx); [-0, +0, -]
+    该函数被continuation函数(see 4.7)调用，为了获得线程的状态和上下文信息。
+    当在original函数调用时，Lua_getctx总是返回LUA_OK并且不会改变参数ctx的值。当在continuation函数内调用时，lua_getctx返回LUA_
+YIELD并且设置ctx的值为上下文信息(作为ctx参数和continuation函数一起被传递到callee的值)。
+    当callee是lua_pcallk时，Lua也许会调用continuation函数来处理调用期间的错误。即，一旦被lua_pcallk调用的函数出错，Lua也许不
+会返回到original函数，相反会调用continuation函数。在这种情况下，对lua_getctx的调用将返回错误代码(被lua_pcallk返回的值);在yie-
+ld情况下ctx的值将被设置为上下文信息。
+    * lua_getfield
+    void lua_getfield(lua_State *L, int index, const char *k); [-0，+1，e]
+    将t[k]的值压入栈中，t是被给索引的值。由于在Lua中，该函数可能会触发"index"事件的元方法。(see 2.4)
+    * lua_getglobal
+    void lua_getglobal(lua_State *L, const char *name); [-0, +1, e]
+    将global name压入栈中。
+    * lua_getmetatable
+    int lua_getmetatable(lua_State *L, int index); [-0, +(0|1), -]
+    将索引index处值的元表压入栈中。如果值没有元表，函数将返回0并且什么都没有压入栈中。
+    * lua_gettable
+    void lua_gettable(lua_State *L, int index); [-1, +1, e]
+    将值t[k]处的值压入栈中，t是index处的值并且k是站定的值。
+    该函数从栈中弹出key。在Lua中，函数可能会触发"index"事件的元方法。(see 2.4)
+    * lua_gettop
+    int lua_gettop(lua_State *L); (-0, +0, -)
+    返回栈顶元素的索引值。因为1表示开始，该结果表示栈中元素的数量(0意味着是一个空栈)。
+    * lua_getuservalue
+    void lua_getuservalue(lua_State *L, int index); [-0, +1, -]
+    将索引index处和userdata相关的Lua值压入栈中。这个Lua值必须是table或者nil。
+    * lua_insert
+    void lua_insert(lua_State *L, int index); [-1, +1, -]
+    移动被给的有效index处的值到栈顶，压缩该index之上的元素为了腾出空间。该函数不会被伪指针调用，因为伪指针不是一个真实存在的
+栈位置。
+    * lua_integer
+    typedef ptrdiff_t lua_Integer;
+    被Lua API使用的类型，表示有符号整数值。
+    默认是ptrdiff_t，通常是机器能处理的最大的有符号整数类型。
+    * lua_isboolean
+    int lua_isboolean(lua_State *L, int index); [-0, +0, -]
+    如果index处的值是布尔值，返回1，否则返回0。
+    * lua_iscfunction
+    int lua_iscfunction(lua_State *L, int index); [-0, +0, -]
+    如果index处是一个C函数，返回1，否则返回0。
+    * lua_isfunction
+    int lua_isfunction(lua_State *L, int index);
+    如果index处是一个函数(或者C或者Lua)，返回1，否则返回0。
+    * lua_islightuserdata
+    int lua_islightuserdata(lua_State *L, int index); [-0, +0, -]
+    如果index处是一个light userdata，返回1， 否则返回0。
+    * lua_isnil
+    int lua_isnil(lua_State *L, int index); [-0, +0, -]
+    如果index处是nil，返回1，否则返回0。
+    * lua_isnone
+    如果index无效，返回1，否则返回0。
+    * lua_isnoneornil
+    如果index无效或者index处的值是nil，返回1，否则返回0。
+    * lua_isnumber
+    int lua_isnumber(lua_State *L, int index); [-0, +0, -]
+    如果index处的值是number或者string可转化为number，返回1，否则返回0。
+    * lua_isstring
+    int lua_isstring(lua_State *L, int index); [-0, +0, -]
+    如果index处的值是string或者number，返回1，否则返回0。
+    * lua_istable
+    int lua_istable(lua_State *L, int index); [-0, +0, -]
+    如果index处的值是table，返回1，否则返回0。
+    * lua_isthread
+    int lua_isthread(lua_State *L, int index);
+    如果index处的值是thread，返回1， 否则返回0。
+    * lua_isuserdata
+    如果index处的值是userdata(或者full或者light)，返回1，否则返回0。
+    * lua_len
+    void lua_len(lua_State *L, int index); [-0, +1, e]
+    返回index处值的长度，等同于'#'(see 3.4.6).结果压入栈中。
+    * lua_load
+    int lua_load(lua_State *L, lua_Reader reader, void *data, const char *source, const char *mode); [-0, +1, -]
+    加载Lua代码块(不运行)。如果没有出错，lua_load将编译的代码块作为Lua函数压入栈中。不然的话，压入错误消息。
+    lua_load返回的值:
+        * LUA_OK: 没有出错
+        * LUA_ERRSYNTAX: 预编译期间格式出错
+        * LUA_ERRMEM: 内存申请错误
+        * LUA_ERRGCMM: 当运行__gc元方法时出错(该错误和被加载的代码块无关。被垃圾收集器生成)
+    lua_load使用用户提供的reader函数读取代码块(see lua_Reader)。data参数是被传递给reader函数的值。
+    source参数为代码块取名，被用错误消息和在debug信息中使用(see 4.9)
+    lua_load自动获知代码块是文本还是二进制并且根据情况加载它(see program luac)。mode是load函数使用的，此外NULL等同于"bt"。
+    lua_load内部实现上使用栈，因此reader返回时，总是保持栈不被修改。
+    如果结果函数有一个upvalue，这个upvalue被设置在registry(see 4.5)中索引LUA_RIDX_GLOBALS处的全局环境中。当加载主程序块时，这
+个upvalue是_ENV变量(see 2.2)。
+    * lua_newstate
+    lua_State *lua_newstate(lua_Alloc f, void *ud); [-0, +0, -]
+    创建一个新的运行在新的独立的state中的线程。如果不能创建线程或者state(由于内存原因)返回NULL。参数f是内存申请函数;Lua通过此
+函数完成这个状态的所有内存申请。第二个参数ud是每次调用内存申请函数时Lua传递的指针。
+    * lua_newtable
+    void lua_newtable(lua_State *L); [-0, +1, e]
+    创建一个新的空的table并且压入栈中。等同于lua_createtable(L, 0, 0)。
+    * lua_newthread
+    lua_State *lua_newthread(lua_State *L); [-0, +1, e]
+    创建一个新的线程，并且压入栈中，并且返回指向lua_State(代表这个新的线程)的指针。被该函数返回的新线程共享original线程的全局
+变量，但是有独立的执行栈。
+    没有明确的函数来关闭或者毁掉该线程。线程和其他的Lua对象一样对于垃圾收集器来说也是对象。
+    * lua_newuserdata
+    该函数申请被给size大小的新的内存块，压入新的full userdata和地址，并且返回地址。主程序可自由使用该内存。
+    * lua_next
+    int lua_next(lua_State *L, int index); [-1, +(2|0), e]
+    从栈中弹出key，将来自index处的table中的键值对压入栈中。如果table中没有更多的元素，那么lua_next返回0。
+    * lua_Number
+    typedef double lua_Number
+    Lua的numbers类型。默认情况下是double，但是在luaconf.h中可被改变。
+    * lua_pcall
+    int lua_pcall(lua_State *L, int nargs, int nresults, int msgh); [-(nargs+1), +(nresults|1), -]
+    以保护模式调用函数。
+    nargs和nresults对于lua_call拥有同样的意义。如果在调用期间没有错误，lua_pcall和lua_call类似。然而，如果有错误，lua_pcall将
+捕获它，将错误消息压入栈中，并且返回错误代码。和lua_call一样，lua_pcall总是从栈中删除这个函数和它的参数。
+    如果msgh是0，那么从栈中返回的错误消息就是原始的错误消息。不然的话，msgh是message handler的栈索引。(在当前实现中，该索引不
+能是伪索引)，在运行中出错，该函数将会被调用，参数是错误消息并且它的返回值就是lua_pcall在栈中的返回值。
+    典型的，message handler被用来增加更多的debug信息到错误消息，例如stack traceback。那样的信息不能在lua_pcall返回后收集，因
+为栈是未展开的。
+    lua_pcall函数返回如下代码之一(定义在lua.h):
+        * LUA_OK(0): 成功
+        * LUA_ERRRUN: 运行时错误
+        * LUA_ERRMEM: 内存申请错误。这样的错误，Lua不会调用message handler。
+        * LUA_ERRERR: 运行message handler时出错。
+        * LUA_ERRGCMM: 运行__gc元方法时出错。
+    * lua_pcallk
+    int lua_pcallk(lua_State *L, int nargs, 
+                    int nresults, int errfunc, 
+                    int ctx, lua_CFunction k); [-(nargs+1), +(nresults|1), -]
+    该函数与lua_pcall一样，但是允许被调用函数yield(see 4.7)。
+    * lua_pop
+    void lua_pop(lua_State *L, int n);
+    从栈中弹出n个元素。
+    * lua_pushboolean
+    void lua_pushboolean(lua_State *L, int b);
+    将值b的布尔值压入栈。
+    * lua_pushcclosure
+    void lua_pushcclosure(lua_State *L, lua_CFunction fn, int n);
+    将一个新的C closure压入栈。
+    当C函数被创建时，它可能会关联一些值，因此创建了C closure(see 4.4)。当函数被调用时，这些值可被访问。为了将这些值与C函数相
+关联，首先这些值应被压入栈中(当有多个值时，第一个值首先被压入)。随后lua_pushcclosure被调用来创建和压入C函数到栈中，参数n说明
+了多少值应该与函数相关。lua_pushcclosure也从栈中弹出这些值。
+    n的最大值是255。
+    当n是0时，函数创建一个light C函数(仅是C函数的指针)。在那种情况下，从不会抛出内存错误。
+    * lua_pushcfunction
+    void lua_pushcfunction(lua_State *L, lua_CFunction f); [-0, +1, -]
+    将C函数压入栈。该函数接受C函数的指针并且function类型的Lua值(被调用时，调用相关的C函数)被压入栈中。
+    被注册在Lua里的任何函数必须遵守正确的协议来接收参数和返回结果(see lua_CFunction)。
+    lua_pushcfunction被定义为宏:
+        #define lua_pushcfunction(L, f) lua_pushcclosure(L, f, 0)
+    注意f被用两次。
+    * lua_pushfstring
+    const char *lua_pushfstring(lua_State *L, const char *fmt, ...); [-0, +1, e]
+    压入栈一个格式化的字符串并且返回这个字符串的指针。和ANSI C函数的sprintf类似，但是有一些重要的不同:
+        * 你不必为结果申请内存: 结果是Lua string并且Lua会关心内存的申请(和释放通过垃圾回收机制)
+        * 转换说明符有限制。
+    * lua_pushglobaltable
+    void lua_pushglobaltable(lua_State *L); [-0, +1, -]
+    将全局环境压入栈。
+    * lua_pushinteger
+    void lua_pushinteger(lua_State *L, lua_Integer n); [-0, +1, -]
+    将数值n压入栈中。
+    * lua_pushlightuserdata
+    void lua_pushlightuserdata(lua_State *L, void *p); [-0, +1, -]
+    将light userdata压入栈。
+    Userdata代表Lua中的C值。light userdata代表指针，void*。它是一个值:你不必创建它，它没有元表，并且不会被收集(因为从来没被创
+建)。light userdata和任何其他带有相同C函数的light userdata一样。
+    * lua_pushliteral
+    const char *lua_pushliteral(lua_State *L, const char *s); [-0, +1, e]
+    该宏和lua_pushlstring一样，但是只被用于字面值字符串。自动提供字符串长度。
+    * lua_pushlstring
+    const char *lua_pushlstring(lua_State *L, const char *s, size_t len); [-0, +1, e]
+    将长度len的s指向的字符串压入栈中。Lua拷贝一份字符串，因此s指向的内存在函数返回后可被立即释放和重用。字符串可包含任何二进
+制值，包含0。
+    * lua_pushnil
+    void lua_pushnil(lua_State *L);
+    将nil值压入栈中。
+    * lua_pushnumber
+    void lua_pushnumber(lua_State *L, lua_Number n); [-0, +1, -]
+    将数值n压入栈中。
+    * lua_pushstring
+    const char *lua_pushstring(lua_State *L, const char *s); [-0, +1, e]
+    将s指向的以0结尾的字符串压入栈中。Lua做了一份拷贝，因此函数返回后可立即释放或者重用s指向的内存。
+    返回指向字符串拷贝的指针。
+    如果s是NULL，压入nil并且返回NULL。
+    * lua_pushthread
+    int lua_pushthread(lua_State *L); [-0, +1, -]
+    将L代表的线程压入栈。如果这个线程是这个状态的主线程返回1。
+    * lua_pushunsigned
+    void lua_pushunsigned(lua_State *L, lua_Unsigned n);
+    将值n压入栈中。
+    * lua_pushvalue
+    void lua_pushvalue(lua_State *L, int index);
+    将索引index处的元素拷贝压入栈中。
+    * lua_pushvfstring
+    const char *lua_pushvfstring(lua_State *L, const char *fmt, va_list argp); [-0, +1, e]
+    和lua_pushfstring一样，除了接收va_list而不是参数的变量值。
+    * lua_rawequal
+    int lua_rawequal(lua_State *L, int index1, int index2);
+    如果index1和index2处的两个值相等返回1。(即，没有调用元方法)。否则返回0。如果索引中任何一个是无效的，则返回0。
+    * lua_rawget
+    void lua_rawget(lua_State *L, int index); [-1, +1, -]
+    和lua_gettable一样，但是是一个原始访问。(例如没有元方法)
+    * lua_rawgeti
+    void lua_rawgeti(lua_State *L, int index, int n); [-0, +1, -]
+    将值t[n]压入栈。t是index处的table。访问是原始的。即，不会调用元方法。
+    * lua_rawgetp
+    void lua_rawgetp(lua_State *L, int index, const void *p); [-0, +1, -]
+    将值t[k]压入栈。t是index处的table，k是代表light userdata的指针p。访问是原始的。即不会调用元方法。
+    * lua_rawlen
+    size_t lua_rawlen(lua_State *L, int index);
+    返回index处值的原始长度。对于字符串，是字符串长度。对于table，是没有元方法的长度结果。对于userdata，是为userdata申请的内
+存块的大小。对于其他值，它是0。
+    * lua_rawset
+    void lua_rawset(lua_State *L, int index);
+    和lua_settable一样，但是是原始分配。
+    * lua_rawseti
+    void lua_rawseti(lua_State *L, int index, int n); [-1, +0, e]
+    和t[n] = v等价。t是index处的table，是栈顶的值。
+    该函数从栈中弹出值。分配是原始的;即不会调用元方法。
+    * lua_rawsetp
+    void lua_rawsetp(lua_State *L, int index, const void *p); [-1, +0, e]
+    和t[k] = v类似。t是index处的table，k是作为light userdata的指针p，v是栈顶的值。
+    该函数从栈中弹出值。分配是原始的。即它不会调用元方法。
+    * lua_Reader
+    typedef const char * (*lua_Reader) (lua_State *L, void *data, size_t *size);
+    被lua_load使用的reader函数。每次它需要另一个代码块时，lua_load调用reader，并且带有data参数。reader必须返回一个新的代码块
+的内存块并且设置size为内存块大小。块必须存在直到reader函数再次被调用。为了标记代码块的结尾，reader必须返回NULL或者设置size为0
+。reader函数可能会返回大于0的块。
+    * lua_register
+    void lua_register(lua_State *L, const char *name, lua_CFunction f);
+    设置全局name的新值为f。被定义为宏:
+        #define lua_register(L, n, f) (lua_pushcfunction(L, f), lua_setglobal(L, n))
+    * lua_remove
+    void lua_remove(lua_State *L, int index); [-1, +0, -]
+    删除有效index处的元素，缩减index以上的元素。该函数不会被伪指针调用，因为伪指针不是一个真实的栈位置。
+    * lua_replace
+    void lua_replace(); [-1, +0, -]
+    移动栈顶元素到有效index处，并且不会缩减任何元素(因此替代被给index处的值)并且弹出栈顶元素。
+    * lua_resume
+    int lua_resume(lua_State *L, lua_State *from, int nargs); [-?, +?, -]
+    开始或者重新开始协程。
+    为了开始协程，将主函数和一些参数压入协程栈中。随后调用lua_resume，nargs是参数的数量。当协程暂停或者完成了执行时，该调用返
+回。当返回时，栈包含了传递给lua_yield的所有值，或者被主题函数返回的所有值。如果协程yield，lua_resume返回LUA_YIELD，如果没有错
+误协程完成了执行返回LUA_OK，或者是出错时一个错误代码。(see lua_pcall)。
+    在出错的情况下，栈未被展开，因此你能使用debug API。错误消息在栈顶。
+    为了重新开始协程，删除来自最后lua_yield的任何结果，仅将来自yield的结果压入栈中，并且随后调用lua_resume。
+    参数from代表重新开始L的协程。如果没有那样的协程，参数是NULL。
+    * lua_setallocf
+    void lua_setallocf(lua_State *L, lua_Alloc f, void *ud);
+    改变被给状态的用户数据ud的申请函数为f。
+    * lua_setfield
+    void lua_setfield(lua_State *L, int index, const char *k);
+    和t[k] = v等价，t是index处的值，v是栈顶的值。
+    该函数从栈中弹出值。在Lua中，该函数可能会触发"newindex"事件的元方法。(see 2.4)
+    * lua_setglobal
+    void lua_setglobal(lua_State *L, const char *name);
+    从栈中弹出一个值，并且设置为全局name的新值。
+    * lua_setmetatable
+    void lua_setmetatable(lua_State *L, int index);
+    从栈中弹出table并且设置该table为index处值的新元表。
+    * lua_settable
+    void lua_settable(lua_State *L, int index);
+    和t[k] = v等价，t是index处的值，v是栈顶的值，k是栈顶之下的值。
+    该函数从栈中弹出键和值。在Lua里，该函数可能会触发"newindex"元方法。(see 2.4)
+    * lua_settop
+    void lua_settop(lua_State *L, int index);
+    接收任何index,或者0，设置栈顶为该index。如果新的top比旧的更大，那么新的元素填充nil。如果index是0，那么所有的栈元素被移除
+。
+    * lua_setuservalue
+    void lua_setuservalue(lua_State *L, int index);
+    从栈中弹出table或者nil并且设置为和index处userdata相关的新值。
+    * lua_State
+    typedef struct lua_State lua_State;
+    指向线程和间接指向Lua解释器完整状态的结构体。Lua库是可重入的(reetrant)。没有全局变量。该state的所有信息都能通过该结构体访
+问。
+    指向结构体的指针必须作为库中每个函数的第一个参数，除了lua_newstate(创建一个新的Lua state)
+    * lua_status
+    int lua_status(lua_State *L);
+    返回线程L的状态。
+    该状态可以是0(LUA_OK)为了一个正常的线程，如果线程完成了lua_resume的执行并产生了一个错误，则是错误代码或者如果线程被暂停，
+是LUA_YIELD。
+    你仅能在状态为LUA_OK的线程里调用函数。你能重新开始一个状态为LUA_OK(开始一个新的协程)或者LUA_YIELD(重新开始一个协程)的线程
+。
+    * lua_toboolean
+    int lua_toboolean(lua_State *L, int index);
+    将index处的Lua值转化为C布尔值(0或者1)。像Lua中的所有测试一样，lua_toboolean对于不同于false和nil的值返回true，否则返回fal-
+se。(如果你只想接受一个真正的布尔值，使用lua_isboolean来测试该值的类型)
+    * lua_tofunction
+    lua_CFunction lua_tofunction(lua_State *L, int index);
+    将index处的值转化为C函数。该值必须为C函数，否则返回NULL。
+    * lua_tointeger
+    lua_Integer lua_tointeger(lua_State *L, int index);
+    和lua_tointegerx且isnum等于NULL等价。
+    * lua_tointegerx
+    lua_Integer lua_tointegerx(lua_State *L, int index, int *isnum);
+    将index处的Lua值转化为有符号整数类型lua_Integer。Lua值必须是number或者可转化为number的string(see 3.4.2)。不然返回0
+    如果number不是整数，将会被以未指定的方式被截断。
+    如果isnum不是NULL，该值被付布尔值表明操作是否成功。
+    * lua_tolstring
+    const char *lua_tolstring(lua_State *L, int index, size_t *len); [-0, +0, e]
+    转化index处的Lua值为C字符串。如果len不是NULL，也设置*len为字符串的长度。Lua值必须为string或者number。否则，函数将返回NULL
+。如果值是number, 那么lua_tolstrin也改变栈中的值到string.(这种改变会使lua_next执行出错当lua_tolstring被应用到遍历的键时)。
+    lua_tolstring返回Lua table内string的指针。该字符串总是在最后添加'\0'，但是中间也会包含其他的0。因为Lua有垃圾收集器，不保
+证被lua_tolstring返回的指针在相关值从栈中移除后依然有效。
+    * lua_tonumber
+    lua_Number lua_tonumber(lua_State *L, int index);
+    和带有isnum为NULL的lua_tonumberx等价。
+    * lua_tonumberx
+    lua_Number lua_tonumberx(lua_State *L, int index, int *isnum);
+    将index处的Lua值转化为C类型lua_Number(see lua_Number)。Lua值必须是number或者可转化为number的string(see 3.4.2);否则返回0。
+    如果isnum不等于NULL，该引用值被赋予布尔值表明操作是否成功。
+    * lua_topointer
+    const void *lua_topointer(lua_State *L, int index);
+    将index处的值转化为C指针(void*)。该值可能会是userdata, table, thread, function;否则返回NULL。不同的对象返回不同的指针。没
+有方法转化该指针到原始值。
+    典型的，该函数只被用来debug信息。
+    * lua_tostring
+    const char *lua_tostring(lua_State *L, int index);
+    和带有len等于NULL的lua_tolstring等价。
+    * lua_tothread
+    lua_State *lua_tothread(lua_State *L, int index);
+    将index处的值转化为Lua协程(表示为lua_State*)。该值必须为线程，否则返回NULL。
+    * lua_tounsigned
+    lua_Unsigned lua_tounsigned(lua_State *L, int index);
+    和带有sinum等于NULL的lua_tounsignedx等价。
+    * lua_tounsignedx
+    lua_Unsigned lua_tounsignedx(lua_State *L, int index, int *isnum);
+    将index处的值转化为无符号整型类型lua_Unsigned。Lua值必须是number或者可转化为number的string(see 3.4.2)否则lua_tounsignedx
+返回0。
+    如果number不是一个整型数，将以未指定的方式截断。
+    如果isnum不等于NULL，它的索引值将被赋予布尔值来表明该操作是否成功。
+    * lua_touserdata
+    void *lua_touserdata(lua_State *L, int index);
+    如果index处是full userdata，则返回块地址。如果值是light userdata，则返回指针。否则返回NULL。
+    * lua_type
+    int lua_type(lua_State *L, int index);
+    返回index处值的类型。或者LUA_TNONE为了无效但是可接受的index。被lua_type返回的类型被编码为定义在lua.h中的下列常量:LUA_TNIL
+，LUA_TNUMBER， LUA_TBOOLEAN，LUA_TSTRING，LUA_TTABLE，LUA_TFUNCTION，LUA_TUSERDATA，LUA_TTHREAD和LUA_TLIGHTUSERDATA。
+    * lua_typename
+    const char *lua_typename(lua_State *L, int tp);
+    返回值tp被编码的类型名字，必须是lua_type返回的值。
+    * lua_Unsigned
+    typedef unsigned long lua_Unsigned;
+    被Lua API使用的类型表明无符号整型值。必须至少32位。
+    默认是unsigned int 或者unsigned long，能装下32位。
+    * lua_puvalueindex
+    int lua_upvalueindex(int i);
+    返回代表运行函数的第i个upvalue的伪指针。(see 4.4)
+    * lua_version
+    const lua_Number *lua_version(lua_State *L);
+    返回存储在Lua内核中的版本号地址。当用一个有效的lua_State调用时，返回创建该state的版本地址。当以NULL调用时，返回运行该调用
+的版本地址。
+    * lua_Writer
+    typedef int (*lua_Writer)(lua_State *L, const void* p, size_t sz, void* ud);
+    被lua_dump使用的writer函数的类型。每次产生新的代码块时，lua_dump调用writer，带着将要被写的缓存p，大小sz，和应用到lua_dump
+的数据参数。
+    writer将返回错误代码:0意味着没有错误。任何其他值意味着发生错误并且阻止lua_dump再次调用writer。
+    * lua_xmove
+    void lua_xmove(lua_State *from, lua_State *to, int n);
+    交换拥有同一个state的不同线程的值。
+    该函数从栈from中弹出n个值，随后压入栈n中。
+    * lua_yield
+    int lua_yield(lua_State *L, int nresults);
+    该函数与lua_yieldk等价，但是没有continuation(see 4.7)。因此，当线程重新开始时，返回到lua_yield的函数。
+    * lua_yieldk
+    int lua_yieldk(lua_State *L, int nresults, int ctx, lua_CFunction k);
+    暂定一个协程。
+    该函数只能作为C函数的返回值表达式使用，如下:
+        return lua_yieldk(L, n, i, k);
+    当C函数以那种方式调用lua_yieldk时，运行的协程将挂起执行，并且开始该协程的lua_resume调用将返回。参数nresults是将要传递到l-
+ua_resume的results的栈中值的数量。
+    当协程重新开始时，Lua调用被给的continuation函数k来继续被yield的C函数的执行(see 4.7)。该continuation函数接收与之前函数同样
+的栈，结果被传递到lua_resume的参数删除或者替换。此外，continuation函数可能会通过调用lua_getctx访问值ctx。
+
+4.9 调式接口
+    Lua没有内建的调式设施。相反，它通过函数和钩子提供了一个特殊的接口。该接口允许不同类型的debuggers，prfilers和其他需要来自
+解释器内部信息的工具的构造器。
+    * lua_Debug
+    typedef struct lua_Debug {
+        int event;
+        const char *nane;            /* (n) */
+        const char *namewhat;        /* (n) */
+        const char *what;            /* (S) */
+        const char *source;          /* (S) */
+        int currentline;             /* (l) */
+        int linedefined;             /* (S) */
+        int lastlinedefined;         /* (S) */
+        unsigned char nups;          /* (u) number of upvalues */
+        unsigned char nparams;       /* (u) number of parameters */
+        char isvararg;               /* (u) */
+        char istailcall;             /* (t) */
+        char short_src[LUA_IDSIZE];  /* (S) */
+        /* private part */
+        other fields
+    } lua_Debug;
+    该结构体被用来跟踪不同种类的关于函数或者激活记录的信息。lua_getstack仅填充该结构体的private部分为了后续使用。为了用有用的
+信息填充lua_Debug其他字段，调用lua_getinfo。
+    lua_Debug字段有下列意义：
+        * source: 创建该函数的块的来源。如果source以'@'开头，意味着函数被定义在文件中，文件名就是'@'之后的文件名。如果source
+以'='开头，剩余部分以用户独立的方式描述该source。否则source代表被字符串定义的函数。
+        * short_src: source的可打印版本，被错误消息使用。
+        * linedefined: 函数开始定义的行号。
+        * lastlinedefined: 函数结束时定义的行号。
+        * what: 如果函数是Lua函数则是"Lua"字符串。如果是C函数则是"C"，如果是代码块的主要部分则是"main"。
+        * currentline: 函数执行的当前行。当没有行信息可用时，currentline被设置为-1。
+        * name: 函数的合理的名字。
+        * namewhat: 解释name字段。namewhat的值可以是"global", "local", "method", "field", "upvalue", 或者"",依据函数怎样被调
+用。(当没有其他选项被用时，Lua将使用空字符串)
+        * istailcall: 如果函数是被尾部调用调用，将为true。在这种情况下，该级别的调用者不在栈中。
+        * nups: 函数的upvalues的值。
+        * nparams: 函数固定参数的数量。(C函数总是0)
+        * isvararg: 如果函数是一个vararg函数返回true。(C函数总是返回true)。
+    * lua_gethook
+    lua_Hook lua_gethook(lua_State *L);
+    返回当前钩子函数。
+    * lua_gethookcount
+    int lua_gethookcount(lua_State *L);
+    返回当前钩子的数量。
+    * lua_gethookmask
+    int lua_gethookmask(lua_State *L);
+    返回当前hook mask
+    * lua_getinfo
+    int lua_getinfo(lua_State *L, const char *what, lua_Debug *ar);
+    得到特定函数或者函数调用的信息。
+    为了得到函数调用的信息，参数ar必须是一个有效的活动记录。该记录或者被之前的lua_getstack调用填充或者被参数hook给(see lua_H-
+ook)。
+    为了得到你压入栈的函数的信息，what是以字符'>'开始的字符串。(在那种情况下，lua_getinfo从栈顶弹出函数)。
+    字符串中的每个字符选择了将要被填充在结构体ar中的某些字段或者将要压入栈中的值。
+        * 'n': 填入字段name和namewhat
+        * 'S': 填入字段source, short_src, linedefined, lastlinedefined和what
+        * 'l': 填入字段currentline
+        * 't': 填入字段istailcall
+        * 'u': 填入字段nups, nparams, isvararg
+        * 'f': 将运行在那个级别的函数压入栈
+        * 'L': 将表明在函数上是有效的行数的table压入栈中
+    在出错时该函数返回0。
+    * lua_getlocal
+    const char *lua_getlocal(lua_State *L, lua_Debug *ar, int n);
+    从给定的活动记录或者函数中获得local变量的信息。
+    在第一种情况下，参数ar必须是一个有效的活动记录，该记录被之前的lua_getstack调用填充或者作为钩子参数(see lua_Hook)。索引n说
+明了那个local变量被查看。看debug.getlocal
+    lua_getlocal压入变量值到栈中并且返回它的名字。
+    在第二种情况下，ar应该是NULL并且被选择的函数必须在栈顶。在这种情况下，只有Lua函数的参数是可见的并且没有值被压入栈中。
+    当索引必活动的local变量的个数还要大将返回NULL。
+    * lua_getstack
+    int lua_getstack(lua_State *L, int level, lua_Debug *ar);
+    * lua_getupvalue
+    const char *lua_getupvalue(lua_State *L, int funcindex, int n);
+    * lua_Hook
+    typedef void (*lua_Hook)(lua_State *L, lua_Debug *ar);
+    * lua_sethook
+    int lua_sethook(lua_State *L, lua_Hook f, int mask, int count);
+    * lua_setlocal
+    const char *lua_setlocal(lua_State *L, lua_Debug *ar, int n);
+    * lua_setupvalue
+    const char *lua_setupvalue(lua_State *L, int funcindex, int n);
+    * lua_upvalueid
+    void *lua_upvalueid(lua_State *L, int funcindex, int n);
+    * lua_upvaluejoin
+    void lua_upvaluejoin(lua_State *L, int funcindex1, int n1, int funcindex2, int n2);
