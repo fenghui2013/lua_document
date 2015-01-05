@@ -1,0 +1,343 @@
+6 标准库
+    标准的Lua库提供了直接通过C API实现的有用的函数。这些函数中的一些语言必要的服务。(例如type和getmetatable)其他提供了访问外
+部服务的方法(例如I/O)。其他的使用Lua自身实现，但是是有用的，且性能与C实现的相当。(例如table.sort)
+    所有的库通过官方的C API实现。并且作为单独的C模块被提供。当前，Lua有如下标准库:
+        * 基本库(6.1)
+        * 协程库(6.2)
+        * 包库(6.3)
+        * 字符串操作(6.4)
+        * 表操作(6.5)
+        * 数学函数库(6.6)
+        * 位操作库(6.7)
+        * 输入与输出
+        * 操作系统设备(6.9)
+        * 调式设备(6.10)
+    除了基本和包库之外，每个库提供了作为全局表或者作为对象方法的所有函数。
+    为了访问这些库，C主程序应该调用luaL_openlibs函数(该函数将会打开标准库)。或者，主程序单独地通过使用luaL_requiref来调用lua-
+open_base(为了基本库)，luaopen_package(为了包库), luaopen_coroutine(为了协程库), luaopen_string(为了字符串库), luaopen_table(
+为了table库), luaopen_math(为了数序库), luaopen_bit32(为了为操作库), luaopen_io(为了IO库), luaopen_os(为了操作系统库)和luaop-
+en_debug(为了调式库)来打开他们。这些函数申明在lualib.h中。
+
+6.1 基本函数
+    基本函数提供了Lua的核心函数。如果你没有在你的应用里包含此库，你应该仔细的检查是否需要提供一些库的实现。
+    * assert(v, [, message])
+    如果参数v是false(nil or false)则引发一个错误。不然，返回它的参数。message是一个错误消息;当缺失时，默认是"assertion failed
+!"。
+    * collectgrbage([opt [, arg]])
+    该函数是垃圾收集器的通用接口。根据第一个参数opt执行不同的函数:
+        * "collect": 执行一个完整的垃圾收集。这是默认的选项
+        * "stop": 阻止垃圾收集器的自动执行。垃圾收集器仅在明确调用后才开始
+        * "restart": 重新开始垃圾收集器的自动执行
+        * "count": 返回Lua使用的内存(单位:Kb)并且第二个数是总内存字节数模1024的结果。第一个值有小数部分。
+        * "step": 执行a garbage-collection step。step的"size"被arg以一种未指定的方式控制。如果你想控制step的大小，你必须实验
+性地调教arg的值。如果step完成了一个收集循环则返回true。
+        * "setpause": 设置arg作为垃圾收集器暂停的新值。(see 2.5)返回之前暂定的值。
+        * "setstepmul": 设置arg作为垃圾收集器step multiplier的新值(see 2.5)。返回之前step的值。
+        * "isrunning": 返回布尔值表明收集器是否正在运行
+        * "generational": 改变垃圾收集器为generational mode。这是一个实验性的功能。
+        * "incremental": 改变垃圾收集器为incremental mode。这是默认模式。
+    * dofile([filename])
+    打开指定的文件并且将其内容当作Lua代码块执行。当无参数调用时，dofile执行标准输入的内容。返回所有被代码块返回的值。在出错的
+情况下，dofile将错误传播到它的调用者(即，dofile没有运行在保护模式下)。
+    * error(message [, level])
+    中断被调用的最后被保护的函数并且返回message作为错误消息。函数error从来不返回。
+    通常情况下，error在消息开头增加一些关于错误位置的信息，如果消息是一个字符串。level参数制定了怎样得到错误位置。level是1(默
+认)，错误位置在error函数被调用的位置。Level2指出调用error函数被调用的位置。等等。传递level0避免额外的错误位置在消息里。
+    * _G
+    持有全局环境的全局变量(不是函数)(see 2.2)。Lua自身不会使用该变量。改变它的值不会影响任何环境，反之亦然。
+    * getmetatable(object)
+    如果对象没有元表，则返回nil。然而，如果对象的元表有字段"__metatable"，返回相关的值。不然，返回对象的元表。
+    * ipairs(t)
+    如果t有元方法__ipairs，用t作为参数调用它并且返回来自调用的前三个结果。
+    不然，返回三个值:一个迭代函数，表t和0。因此构造器
+        for i, v in ipairs(t) do body end
+    将会迭代(1, t[1]), (2, t[2]), ...
+    * load(ld [, source [, mode [, env]]])
+    加载代码块。
+    如果ld是一个字符串，代码块是这个字符串。如果ld是一个函数，反复的调用它来加载代码块。对ld的每次调用必须返回和之前结果相关
+的字符串。空字符串，nil或者无值返回表明代码块结束。
+    如果没有语法错误，将编译的代码块作为函数返回。不然，返回nil加错误消息。
+    如果结果函数有upvalues，第一个upvalue被设置为env的值，如果该参数被给或者设置为全局环境。(当你加载一个主要块时，结果函数总
+是有一个puvalue，_ENV变量(see 2.2)。当你从函数(see string.dump)中加载一个二进制块时，结果函数可能有任意的upvalues)
+    source是代码块的来源，供错误消息和调试信息使用(see 4.9)。当缺失时，默认是ld，如果ld是一个字符串或者to "=(load)" otherwise
+    字符串mode控制了代码块是文本还是二进制(即，一个预编译的代码块)。它可能是"b"(仅为了二进制代码块)，"t"(仅为了文本代码块)或
+者"bt"(既有文本又有二进制)。默认是"bt"。
+    * loadfile
+    和load相似，但是从文件filename中获得代码块，如果没有文件名，将从标准输入。
+    * next(table [, index])
+    允许程序遍历table的所有字段。第一个参数是table，第二个参数是表的索引。next返回表的下一个索引和相关的值。当nil作为第二个参
+数调用，next返回初始的索引和相关的值。当以最后一个索引或者nil在空表中调用，next将返回nil。如果第二个参数缺失，将被解释为nil。
+特别的，你能使用next(t)来检查表是否为空。
+    索引被列举的顺序未指定，即使是数字索引。(为了以数字顺序遍历表，使用numerical for)
+    如果在便利期间，你赋值到表中不存在的字段，next的行为将是未定义的。然而，你可以修改已经存在的字段。特别的，你可以清除存在
+的字段。
+    * pairs
+    如果t有__pairs元方法，使用t作为参数调用它，并且从调用中返回前三个结果。
+    否则，返回三个值: next函数，表t，和nil。因此如下
+        for k, v in pairs(t) do body end
+    将会迭代表t中的所有键值对。
+    看函数next为了在遍历期间修改表的警告。
+    * pcall(f [, arg1, ...])
+    以保护模式调用函数f。这意味着在f内的任何错误都不会向外传播。相反，pcall捕获该错误且返回状态码。如果第一个结果是状态码(布
+尔值)，如果没有出错调用成功则是true。在这种情况下，pcall将会从调用中返回所有的结果(该结果在第一个结果之后)。在任何出错的情况
+下，pcall返回false加错误消息。
+    * print(...)
+    接收许多参数且打印到stdout，使用tostring函数转化任何参数到字符串。pirnt不用于格式化输出，而是作为展现值的一种快速的方法，
+为了调式。为了完全控制输出，使用string.format和io.write。
+    * rawequal(v1, v2)
+    检查v1是否等于v2，不调用任何元方法。返回布尔值。
+    * rawget(table, index)
+    在不调用元方法的情况下，得到table[index]的真实值。table必须是table；index可以是任何值。
+    * rawlen(v)
+    在不调用元方法的情况下，返回对象v的长度，该对象必须是table或者string。返回一个整数值。
+    * rawset(table, index, value)
+    在不调用元方法的情况下，设置table[index]的值为value。table必须是table，index可能是除nil和NaN之外的任何值，value可以是任何
+Lua value。
+    该函数返回table。
+    * select(index, ...)
+    如果index是一个number，返回参数index之后的所有参数。负数表明从尾部索引(-1是最后一个元素)。不然，index必须是字符串"#"且se-
+lect返回额外参数的总个数。
+    * setmetatable(table, metatable)
+    设置table的元表。(你不能改变来自Lua的其他类型的元表，仅来自C的)。如果元表是nil，将移除table的元表。如果原始元表有"__meta-
+table"，引发一个错误。
+    该函数返回一个table。
+    * tonumber(e [, base])
+    在没有参数base调用时，tonumber尝试着将参数转化为number。如果参数已经是number或者可转化为number的string(see 3.4.2)，那么t-
+onumber将会返回该值。否则，返回nil。
+    有base参数调用时，e应该是一个以该base为基础作为整数解释的字符串。base可以在2到36之间。在大于10的base中，字母'A'(无论大小
+写)代表10，'B'代表11，等等，'Z'代表35。如果字符串e不是一个以base为基础的有效数字，函数返回nil。
+    * tostring(v)
+    接收任何类型的值且以合理的方式转化为字符串。(为了完全控制数字怎样被转换，使用string.format)
+    如果v的元表有字段"__tostring"，那么tostring调用v的相应值作为参数，使用调用的结果作为结果。
+    * type(v)
+    返回参数的类型，编码为字符串。该函数可能的结果是"nil"(一个字符串，不是值nil)，"number"，"string"，"boolean"，"table"，"fu-
+nction"，"thread"和"userdata"。
+    * _VERSION
+    包含当前解释器版本的字符串的全局变量。该变量的当前值是"Lua 5.2"。
+    * xpcall(f, msgh [, arg1, ...])
+    该函数和pcall类似，除了设置了一个新的消息处理器msgh。
+
+6.2 协程操作(Coroutine Manipulation)
+    和协程相关的操作由基本库的子库和表coroutine组成。看2.6为了协程的一般性描述。
+    * coroutine.create()
+    使用f创建一个新的协程。f必须是一个Lua函数。返回这个新的协程，类型为"thread"的对象。
+    * coroutine.resume(co [, val1, ...])
+    开始或者继续协程co的执行。第一次你开始一个协程的时候，它开始运行函数体。值val1,...是作为参数传递到函数体的。如果协程暂定
+，resume则重新开始它。值val1,...作为来自yield的结果被传递。
+    如果协程执行没有任何错误，resume将返回true加传递到yield的任何值(如果协程暂停)或者被函数返回的任何值(如果协程中断)。如果有
+任何错误，resume则返回false加错误消息。
+    * coroutine.running()
+    返回运行的协程加布尔值，当正在运行的协程是主要的则是true。
+    * coroutine.status(co)
+    以字符串形式返回协程co的状态: "running" 如果协程正在运行(即，它调用了status);"suspended"，如果协程被调用yield挂起或者还未
+开始;"normal"，如果协程是活动的但是没有运行(即，它重新开始了另一个协程);"dead"，如果协程完成了函数体的执行或者是发生错误停止
+。
+    * coroutine.wrap(f)
+    用函数题f创建一个新的协程。f必须是一个Lua函数。每次被调用时返回重新开始协程的函数。被传递给该函数的参数和到resume的额外的
+参数一样。返回被resume返回的同样的值，除了第一个布尔值。在出错的情况下，向上引发错误。
+    * coroutine.yield(...)
+    暂停调用协程的执行。yield的参数作为传递到resume的额外的结果。
+
+6.3 模块
+    模块库为在Lua中加载模块提供了基本的设施。它直接从全局环境中引出一个函数:require。其他任何东西在表package中引出。
+    * require(modname)
+    加载被给的模块。该函数开始通过查看package.loaded表来决定modname是否已经被加载。如果是，require将会返回被存储在package.lo-
+aded[modname]中的值。否则，尝试发现该模块的loader。
+    为了发现loader，require被package.searchers序列指引。通过改变该序列，我们改变require寻找模块的方式。接下来的解释是基于pac-
+akage.searchers的默认配置。
+    首先require查询package.preload[modname]。如果有值，该值就是loader。否则，require使用被存储在package.path的路径查询Lua lo-
+ader。如果也失败了，将使用存储在package.cpath的路径寻找C loader。如果也失败了，将尝试all-in-one loader(see package.searchers)
+。
+    一旦loader被发现，require用两个参数调用加载器:modname和一个额外的值(该值独立于它怎样得到laoder)。(如果laoder来自于文件，
+该额外值就是文件名)如果loader返回了任何非nil的值，require将值赋给package.loaded[modname]。如果loader没有返回非nil的值且没有赋
+任何值给package.loaded[modname]，那么require将该实体赋为true。在任何情况下，require返回package.loaded[modname]的值。
+    如果加载或者运行模块时出错或者不能为该模块发现加载器，随后require引发一个错误。
+    * package.config
+    一些描述包即时编译的配置的字符串。该字符串是如下行的序列:
+        * 第一行是目录分割字符串。对于Windows是'\'和对于其他系统是'/'。
+        * 第二行是路径分割模板的字符。默认是';'。
+        * 第三行是标识模板中被替换点的字符串。默认是'?'。
+        * 第四行是在Windows里，被可执行目录替换的字符串。默认是'!'。
+        * 第五行是一个标记。当编译luaopen_函数名时，该标记忽略之前的所有文本。默认是'-'。
+    * package.cpath
+    被require使用的路径为了寻找C loader。
+    使用环境变量LUA_CPATH_5_2或者环境变量LUA_CPATH或者在luaconf.h中的默认路径，Lua使用初始化Lua path package.path的方法初始化
+C path package.cpath。
+    * package.loaded
+    被require使用来控制模块是否已经被加载的表。当你require一个模块modname且package.loaded[modname]不是false，require仅简单的
+返回存储在那的值。
+    该变量只是真实表的引用。对该变量赋值不会改变被require使用的table。
+    * package.loadlib(libname, funcname)
+    动态的链接C库libname到主程序。
+    如果funcname是"*"，它仅链接该库，使该库导出的符号被其他动态链接库可用。然而，它寻找库里的函数funcname且返回C函数作为函数
+。因此，funcname必须遵循lua_CFunction原型。(see lua_CFunction)。
+    这是一个低级的函数。它完全绕过包和模块系统。不像require，它不执行任何路径搜索且不自动增加扩展。libname必须是C库的完整文件
+名，如果必要的话包含一个路径和一个扩展。funcname必须是从C库中导出的精确的名字(可能会依赖使用的C编译器和链接器)。
+    该函数不支持标准C。正因为如此，仅能在一些平台上使用。(Windows, Linux, Mac OS X, Solaris, BSD, 加其他支持dlfcn的Unix系统)
+    * package.path
+    被require使用的用来寻找Lua loader的路径。
+    启动的时候，Lua使用环境变量LUA_PATH_5_2或者环境变量LUA_PATH或者定义在luaconf.h中的默认路径初始化该变量。在环境变量里的";;"
+将会被默认路径替换掉。
+    * package.preloaded
+    为特定模块存储loaders的表。(see require)。
+    * package.searchers
+    被require使用的表来控制怎样加载模块。
+    该表中的每个实体都是a searcher function。当寻找模块时，require按照升序调用这些searchers，模块名(传递给require的参数)作为
+唯一参数。该函数能返回另一个函数(模块loader)加将被传递给loader的额外值或者解释为什么没有发现模块的原因(如果没有什么可说的就是
+nil)
+    Lua用四个searcher函数初始化该表。
+    第一个searcher仅简单地从package.preload表寻找loader。
+    第二个searcher使用存储在package.path里的路径寻找loader作为Lua库。
+    第三个searcher使用变量package.cpath给出的路径寻找loader作为C库。例如，如果C路径是字符串
+        "./?.so;./?.dll;/usr/local/?/init.so"
+    寻找模块foo将会尝试打开文件./foo.so,./foo.dll和/usr/local/foo/init.so。一旦发现了C库，该searcher首先使用动态链接器将库链
+接到应用。随后尝试发现库里的C函数被用作加载器。该C函数的名字是字符串"luaopen_"和每个点号被下划线替换后的模块名的拷贝。此外，
+如果模块名有连词符，到第一个连词符之前的前缀将被移除。例如，如果模块名是a.v1-b.c，函数名将是luaopen_b_c。
+    第四个searcher尝试all-in-one loader。它为被给模块的根名寻找C路径。例如，当require a.b.c时，将会为a寻找C库。如果被发现，它
+为子模块寻找打开函数。在我们的例子中，将是luaopen_a_b_c。使用这个设备，一个包能打包几个C的子模块进入一个单独的库，且每个子模
+块保持初始的打开函数。
+    除了第一个(preload)之外所有的searchers将会作为额外值返回模块被发现的文件名，被package.searchpath返回的。第一个searcher不
+会返回额外值。
+    * package.searchpath(name, path [, sep [, rep]])
+    在path中寻找name。
+    path是包含被分号分隔的模板序列的字符串。对于每个模板，函数将会使用将会被rep(默认是系统的目录分隔符)替换的sep(默认是,)出现
+的地方的名字替换问号，随后尝试打开结果文件名。
+    例如，如果路径是字符串
+        "./?.lua;./?.lc;/usr/local/?/init.lua"
+    对于foo.a的搜索将会尝试打开文件./foo/a.lua,./foo/a.lc和/usr/local/foo/a/init.lua。
+    返回能以读模式打开的第一个文件的结果名字，或者nil加错误信息如果不成功。(该错误消息列出了它尝试打开的所有错误消息)
+
+6.4 字符串操作(String Manipulation)
+    该库提供了字符串操作的一般函数，例如发现和截取子字符串和模式匹配。当在Lua中索引字符串时，第一个字符在位置1(不是0)。索引允
+许是负数和被解释为索引倒退。因此最后一个字符是-1，以此类推。
+    字符串库提供在表string中的所有函数。它也设置字符串的元表(字段__index指出了string表)。因此，你能使用面向对象风格的字符串函
+数。例如，string.byte(s, i)可以被写为s:byte(i)。
+    字符串库假设一个字节的字符编码。
+    * string.byte(s [, i [, j]])
+    返回字符s[i], s[i+1], ..., s[j]的内部整数代码。对于i的默认值是1。j的默认值是i。这些索引按照函数string.sub的规则校正。
+    数值代码不必跨平台。
+    * string.char(...)
+    接受0或者更多的整数。返回带有参数数量的长度的字符串。每个参数都有一个等于相应参数的内部数值码。
+    数值代码不必跨平台。
+    * string.dump(function)
+    返回包含被给函数的二进制表示的字符串，因此稍候在该字符串的load将会返回该函数的拷贝(且带有新的upvalues)。
+    * string.find(s, pattern [, init [, plain]])
+    在字符串s中寻找第一个匹配pattern。如果发现了一个匹配，随后find返回该出现开始和结束在s中的索引。否则，返回nil。第三个可选
+的数值参数init制定了开始寻找的地点。默认值是1且可以是负值。第四个可选的参数plain为true将关掉模式匹配机制，因此函数将做一次发
+现字串操作，其中，pattern中没有字符被认为是魔法字符。注意如果plain被给，那么init也必须被给。
+    如果模式具有捕获功能，那么在成功匹配之后，被捕获的值在两个索引之后也被返回。
+    * string.format(formatstring, ...)
+    返回按照第一个参数描述的被格式化的可变数量参数的版本。格式化字符串遵循ANSI C函数sprintf同样的规则。唯一的不同是*,h,L,l,n
+和p不被支持且有额外的选项。
+    * string.gmatch(s, pattern)
+    每次被调用时，返回迭代函数，返回从s中匹配pattern的捕获。如果pattern无捕获，那么在每次调用时产生整个匹配。
+    * string.gsub(s, pattern, repl [, n])
+    返回pattern出现的被repl替换掉的s的拷贝，可能是string, table, function。gsub也返回出现匹配的总数量作为第二个参数。
+    如果repl是string，那么值将会被替换掉。字符%作为逃避符:在repl中形式如%d的任意序列。其中，d在1到9之间，代表第d个被捕获的子
+串。序列%0代表完整匹配。序列%%代表单独的%。
+    如果repl是table，那么
+    * string.len(s)
+    接收一个字符串且返回它的长度。空字符串""有长度0。嵌入的0被计算在内。因此"a\000bc\000"长度为5。
+    * string.lower(s)
+    接收一个字符产且将所有字母转化为小写。大写字母的定义依赖当前的本地环境。
+    * string.match(s, pattern [, init])
+    在s中寻找pattern的第一个匹配。如果发现，match将从pattern中返回捕获。否则，返回nil。如果pattern没有指定捕获，那么整个匹配
+被返回。第三个可选的参数init描述了search开始的地方。默认值是1且可以是负数。
+    * string.rep(s, n [, sep])
+    返回被字符串sep分割的字符串s的n个拷贝。sep的默认值是空字符串。
+    * string.reverse(s)
+    返回被翻转的字符串s的字符串。
+    * string.sub(s, i [, j])
+    返回从i开始到j结束的s的字串。i和j可以是负数。如果j缺失，那么被假设为-1(和字符串的长度相同)。
+    * string.upper(s)
+    接收一个字符串且将该字符串全部大写后返回。
+
+6.4.1 模式(Patterns)
+    字符类(character class):
+    一个字符类被用来代表字符的集合。下列组合被用来描述字符类:
+        * x: (x不是魔法字符^$()%.[]*+-?)代表了字符x本身。
+        * .: 代表所有字符。
+        * %a: 代表所有字母。
+        * %c: 代表所有控制字符。
+        * %d: 代表数字。
+        * %g: 代表所有可打印字符除了空格。
+        * %l: 代表所有的小写字母。
+        * %p: 代表所有的标点字符。
+        * %s: 代表所有的空格字符。
+        * %u: 代表所有的大写字母。
+        * %w: 代表所有的文字数字字符。
+        * %x: 代表所有的十六进制数字。
+        * %x: (x不是任何非文字数字字符)代表字符x。这是逃脱魔法字符的标准方法。
+        * [set]: 
+        * [^set]:
+    被小写字母(%a, %c, 等)表示的所有类，相应的大写字母代表该类的补集。例如%S代表了所有非空格的字符。
+    模式项:
+    模式(Pattern):
+    捕获(Captures):
+6.5 表操作
+    库为表操作提供了通用的函数。它在表table中提供了所有的函数。 
+    记住，无论何时操作需要表的长度时，表应该是一个有__len元方法的恰当的序列。(see 3.4.6)。所有的函数忽略表中作为参数被给的非
+数字的键。
+    由于性能原因，被这些函数执行的所有表访问是随机的。
+    * table.concat(list [, sep [, i [, j]]])
+    * table.insert(list, [pos,] value)
+    * table.pack(...)
+    * table.remove(list [, pos])
+    * table.sort(list [, comp])
+    * table.unpack(list [, i [, j]])
+    返回表中所有的元素。该函数等价于
+        return list[i], list[i+1], ..., list[j]
+    默认,i是1和j是#list。
+
+6.6 数学方法
+    该库提供了标准C数学库的接口。它提供了表math中的所有函数。
+    * math.abs(x)
+    * math.acos(x)
+    * math.asin(x)
+    * math.atan(x)
+    * math.atan2(y, x)
+    * math.ceil(x)
+    * math.cos(x)
+    * math.cosh(x)
+    * math.deg(x)
+    * math.exp(x)
+    * math.floor(x)
+    * math.fmod(x, y)
+    * math.frexp(x)
+    * math.huge
+    * math.ldexp(m, e)
+    * math.log(x [, base])
+    * math.max(x, ...)
+    * math.min(x, ...)
+    * math.modf(x)
+    * math.pi
+    * math.pow(x, y)
+    * math.rad(x)
+    * math.random([m [, n]])
+    * math.randomseed(x)
+    * math.sin(x)
+    * math.sinh(x)
+    * math.sqrt(x)
+    * math.tan(x)
+    * math.tanh(x)
+
+6.7 位操作(Bitwise Operations)
+    该库提供了按位操作。它在表bit32中提供所有的函数。
+    除非另有说明，所有函数接受的数值参数范围在(-2^51, +2^51)。每个参数被归一化为除2^32的余数且截断为整数(以一种未指定的方式)
+。因此最终的结果在[0, 2^32-1]之间。同样的，所有的结果都在[0, 2^32-1]之间。注意bit32.bnot(0)是0xFFFFFFFF，不同于-1。
+    * bit32.arshift(x, disp)
+    * bit32.band(...)
+    * bit32.bnot(x)
+    * bit32.bor(...)
+    * bit32.btest(...)
+    * bit32.bxor(...)
+    * bit32.extract(n, field [, width])
+    * bit32.replace(n, v, field [, width])
+    * bit32.lrotate(x, disp)
+    * bit32.lshift(x, disp)
+    * bit32.rrotate(x, disp)
+    * bit32.rshift(x, disp)
+
+6.8 输入和输出设备
+6.9 操作系统设备
+6.10 调式库
