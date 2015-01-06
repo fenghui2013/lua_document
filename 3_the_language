@@ -1,0 +1,46 @@
+3 语言(The Language)
+    该章描述了Lua的词(lexis)，语法(syntax)和语义(semantics)。换言之，该章描述了那些标志是有效的，它们怎么被组合及组合的意义。
+    语言构造使用常见的可扩展的BNF表示法描述。{a}意味着0到a之间个。[a]意味着可选的a。Non-terminals以non-terminal显示。keywords
+以kword显示。
+
+3.1 词法约定(Lexical Conventions)
+    Lua是一个自由格式的语言。它忽略空格(包含新行)和在词法元素(tokens)之间的注释，除了在names和keywords之间的分隔符。
+    Lua中的Names(也被叫做标识符(idenfifiers))可以是由字母，数字和下划线组成的任何字符串，不以数字开头。标识符被用来命名变量，
+表字段，和标签。
+    下列关键字(keywords)被保留，不能被用来命名变量:
+        and    break  do        else   elseif  end
+        false  for    function  goto   if      in
+        locla  nil    not       or     repeat  return
+        then   true   until     while
+    Lua是一个大小写敏感的语言。and是一个被保留的字，但是And和AND是两个不同的有效的名字。按照约定，以下划线开始紧接大小字母的
+名字(例如_VERSION)被Lua保留用作变量。
+    下列字符串表示其他的标识符:
+        +   -   *   /   %   ^   #
+        ==  ~=  <=  >=  <   >   =
+        (   )   {   }   [   ]   ::
+        ;   :   ,   .   ..  ...
+    字面字符串以单引号后者双引号分割，可以包含下列类C的序列'\a', '\b', '\f', '\n', '\r', '\t', '\v', '\\', '\"', '\''。一个换
+行符号紧接一个真正的换行在字符串中产生一个新行。'\z'跳过空白字符部分，包括换行符。It is particularly useful to break and ind-
+ent a long literal string into multiple lines without adding the newlines and spaces into the string contents。
+    字面字符串的字节也可以通过数字值指定。可以通过\xXX序列实现，其中XX是两个十六进制值，或者\ddd，其中ddd是三个十进制数序列。
+Lua中的字符串能包含任何8位值，包含嵌入的0，即'\0'。
+    字面字符串中未被前面规则影响的字节均表示自身。然而，Lua打开文件为了在文本模式下解析，系统文件函数在一些控制字符上可能会有
+问题。因此将非文本数据表达为非文本字符显示为转义的带引号的文本更安全。
+    为了方便，在打开的长左括号后紧跟换行符，换行符不包括在字符串中。例如，使用ASCII的系统中，下面的五个字符串表示相同的字符串
+。      a = 'alo\n123"'
+        a = "alo\n123\""
+        a = '\97lo\10\04923'
+        a = [[alo
+        123"]]
+        a = [==[
+        alo
+        123"]==]
+    数值常量(numerical constant)可以由一个可选的小数部分和一个可选的十进制指数组成，其中以字符'e'或者'E'分隔。Lua也接收16进制常
+量，其中以0x或者0X开始。十六进制常量也接受一个可选的小数部分加一个可选的二进制指数，其中以字符'p'或者'P'分隔。有效的数字常量
+如下：
+        3    3.0    3.1416    314.16e-2  0.31416E1
+        0xff 0x0.1E 0xA23p-4  0X1.921FB54442D18P+1
+    注释(comment)在字符串外以两个连字符(--)开始。如果在--之后的文本不是一个长括号，注释是一个短注释(short comment)，运行到
+行尾。否则是是一个长注释(long comment)，直到相应的关闭长括号为止。长注释通常用来暂时取消代码。
+
+3.2 变量(Variables)
