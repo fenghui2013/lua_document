@@ -280,10 +280,20 @@ nil)
 数字的键。
     由于性能原因，被这些函数执行的所有表访问是随机的。
     * table.concat(list [, sep [, i [, j]]])
+    给定一个list，其中所有的元素是string或者number，返回字符串list[i]..sep..list[i+1] ... sep..list[j]。sep的默认值是空字符串
+。默认的i是1。且默认的j是#list。如果i大于等于j，返回空字符串。
     * table.insert(list, [pos,] value)
+    在表list中的pos位置插入值value。扩张元素list[pos], list[pos+1], ..., list[#list]。pos的默认值是#list+1。因此调用table.in-
+sert(t, x)等于在表t的尾部插入x。
     * table.pack(...)
+    返回一个新表所有参数被存在键1，2等，且字段n是参数的总个数。注意结果表可能不是一个序列。
     * table.remove(list [, pos])
+    删除表list中位置pos的元素，返回被删除元素的值。当pos在1和#list之间时，缩减元素list[pos+1], list[pos+2], ...,list[#list]。
+且清除掉元素list[#list];pos也可以是0当#list是0时或者是#list+1。在这些情况下，函数擦除元素list[pos]。
     * table.sort(list [, comp])
+    按照给定的顺序排序表list。如果comp被给，它应该是一个函数，该函数接收两个列表元素且当第一个元素在最终的顺序中在第二个参数
+之前返回true。如果comp没有给，那么标准的Lua操作符<被使用。
+    排序算法不稳定。即按照给定的顺序考虑相等的元素也可能被sort改变他们的相对位置。
     * table.unpack(list [, i [, j]])
     返回表中所有的元素。该函数等价于
         return list[i], list[i+1], ..., list[j]
@@ -292,29 +302,42 @@ nil)
 6.6 数学方法
     该库提供了标准C数学库的接口。它提供了表math中的所有函数。
     * math.abs(x)
+    返回x的绝对值
     * math.acos(x)
     * math.asin(x)
     * math.atan(x)
     * math.atan2(y, x)
     * math.ceil(x)
+    返回大于等于x的最小的整数。
     * math.cos(x)
     * math.cosh(x)
     * math.deg(x)
     * math.exp(x)
+    返回值e^x。
     * math.floor(x)
+    返回小于等于x的最大整数。
     * math.fmod(x, y)
+    返回x被y整除的余数。
     * math.frexp(x)
     * math.huge
     * math.ldexp(m, e)
     * math.log(x [, base])
     * math.max(x, ...)
+    返回参数中最大的值。
     * math.min(x, ...)
+    返回参数中最小的值。
     * math.modf(x)
+    返回两个数，x的整数部分和小数部分。
     * math.pi
     * math.pow(x, y)
+    返回x^y。
     * math.rad(x)
     * math.random([m [, n]])
+    该函数提供标准C提供的伪随机数生成函数rand的接口。(不保证具有统计性质)
+    没有参数调用时，返回[0,1)之间的统一伪随机实数。当以整数m调用时，math.random返回在[1, m]之间的统一伪随机数。当以整数m和n调
+用时，math.random返回在[m, n]之间的统一伪随机数。
     * math.randomseed(x)
+    设置x为伪随机数生成器的种子。相同的种子产生相同的序列。
     * math.sin(x)
     * math.sinh(x)
     * math.sqrt(x)
@@ -326,18 +349,179 @@ nil)
     除非另有说明，所有函数接受的数值参数范围在(-2^51, +2^51)。每个参数被归一化为除2^32的余数且截断为整数(以一种未指定的方式)
 。因此最终的结果在[0, 2^32-1]之间。同样的，所有的结果都在[0, 2^32-1]之间。注意bit32.bnot(0)是0xFFFFFFFF，不同于-1。
     * bit32.arshift(x, disp)
+    返回右移disp位的x。数字disp可以是任何可描述的整数。负数向左移位。
+    移位操作称为算数移位。左边的空闲位填充x更高位的拷贝。右边的空闲位填充0。特别的，移位个数大于31的结果是0或者是0xFFFFFFFF。
     * bit32.band(...)
+    返回按位与的结果
     * bit32.bnot(x)
+    返回取反x的结果。
     * bit32.bor(...)
+    返回按位或的结果。
     * bit32.btest(...)
+    返回按位与后的结果和0不同的布尔值。
     * bit32.bxor(...)
+    返回执行异或操作的结果。
     * bit32.extract(n, field [, width])
+    返回n中从field到field+width-1之间的无符号整数。
     * bit32.replace(n, v, field [, width])
+    返回将n中从field到field+width-1之间被n替换掉的值的拷贝。
     * bit32.lrotate(x, disp)
+    返回x向左移位disp的结果。disp是任何可接受的整数。
+    默认情况下，负数向右轮换。
     * bit32.lshift(x, disp)
+    返回x向左移位disp的结果。disp是任何可接受的整数。负数向右移。在任何方向上，空闲位填充0。特别的，绝对值大于31的结果是0。
     * bit32.rrotate(x, disp)
+    返回x向右旋转disp位的值。
+    特别的，负数向左旋转。
     * bit32.rshift(x, disp)
+    与bit32.lshift以相反方向操作。
+    shift操作叫逻辑移位。
 
 6.8 输入和输出设备
+    I/O库提供了两种不同风格的文件操作。第一个使用隐式的文件描述符。即，有设置默认输入文件和默认输出文件的操作，且所有的输入输
+出操作都在这些默认的文件之上。第二种使用显式的文件描述符。
+    当使用隐式的文件描述符时，所有的操作被表io提供。当使用显式文件描述符时，操作io.open返回文件描述符且随后所有的操作被应用在
+文件描述符的方法上。
+    表io也提供了三个预定义的文件描述符，io.stdin, io.stdout和io.stderr。I/O库从来不会关闭这些文件。
+    除非另作说明，否则所有的I/O函数在失败时都返回nil(加错误消息作为第二个结果和系统独立的错误代码作为第三个结果)和成功时不同
+于nil的值。在non-Posix系统上，在出错情况下错误消息和错误代码的计算可能不是线程安全的，因为他们依赖全局的C变量errno。
+    * io.close([file])
+    和file:close()等价。没有file，则关闭默认的输出文件。
+    * io.flush()
+    和io.output():flush()等价。
+    * io.input([file])
+    以文件file调用，以文本模式打开文件。将句柄设置为默认的输入文件。当以file句柄调用时，仅简单的设置该句柄为默认输入文件。当
+无参数调用时，返回当前的默认输入文件。
+    在出错的情况下，该函数引发一个错误，而不是返回一个错误代码。
+    * io.lines([filename...])
+    以读模式打开被给的文件且返回一个像file:lines(...)一样在被打开的文件上工作的迭代函数。当迭代函数发现已到达文件尾时，返回n-
+il且自动关闭文件。
+    io.lines()(没有文件名)的调用和io.input():lines()等价。即，它迭代默认输入文件的行。在这种情况下，当循环结束时，不会关闭文
+件。
+    在出错的情况下，该函数引发一个错误，而不是返回错误代码。
+    * io.open(filename [, mode])
+    该函数以指定的mode打开一个文件。返回新的文件句柄或者在出错的情况下，返回nil加错误消息。
+    mode字符串如下:
+        * "r": 读模式(默认)
+        * "w": 写模式
+        * "a": 追加模式
+        * "r+": 更新模式，之前的数据被保护
+        * "w+": 更新模式，之前的数据被擦除
+        * "a+": 追加更新模式，之前的数据被保护，仅允许在文件尾写。
+    在mode末尾可以有'b'，在一些以二进制模式打开文件的系统上需要。
+    * io.output([file])
+    和io.input类似，但是操作在默认的输出文件上。
+    * io.popen(prog [, mode])
+    该函数是系统独立的且不是在所有平台上都可用。
+    在单独进程里开始prog且返回从该程序中你能读数据的文件句柄或者写数据到该程序。
+    * io.read(...)
+    和io.input():read(...)相等
+    * io.tmpfile()
+    返回一个临时文件的句柄。该文件以更新模式打开且当程序结束时，自动被移除。
+    * io.type(obj)
+    检查obj是否是有效的文件句柄。如果obj是一个打开的文件句柄返回字符串"file"，如果obj是一个关闭的文件句柄返回"closed file"或
+者如果obj不是一个文件句柄，返回nil。
+    * io.write(...)
+    和io.output():write(...)等价
+    * file:close()
+    关闭文件。注意当句柄被垃圾收集器回收时会自动被关闭，但是需要一个不可预测的时间。
+    当关闭使用io.popen创建的文件句柄时，file:close返回值和os.execute的返回值一样。
+    * file:flush()
+    保存任何已经被写的数据到file
+    * file:lines(...)
+    返回迭代函数。每次被调用，依据被给的格式读文件。当无格式被给时，使用"*l"作为默认。
+    在出错的情况下，该函数引发一个错误，而不是返回一个错误代码。
+    * file:read(...)
+    读文件file，按照被给的格式(指定了读取的内容)。对于每种格式，函数返回读取字符的字符串或者如果不能按照指定的格式读取则为nil
+。当无参数调用时，使用默认格式读下一行。
+    可用的格式:
+        * "*n": 读一个数字。这是返回数字而不是字符串的唯一格式。
+        * "*a": 读整个文件，从当前位置开始。到文件末尾时，返回空字符串。
+        * "*l": 跳过行结束符读取下一行。在文件末尾返回nil。这是默认格式。
+        * "*L": 保留行结束符读取下一行。在文件末尾返回nil。
+        * number: 读取一个字符串直到number个字节。如果到文件尾则返回nil。如果number是0，什么都不读且返回空字符串或在文件尾返
+回nil。
+    * file:seek([whence [, offset]])
+    设置和得到文件位置，从文件开始算，到被offset给定的位置加whence描述的base。例如:
+        * "set": base是位置0(文件的开始)
+        * "cur": base是当前位置
+        * "end": base是文件末尾
+    成功的情况下，seek返回最终的文件位置，从文件开始以字节计算。如果seek失败，返回nil加描述错误的字符串。
+    whence的默认值是"cur"， offset是0.因此调用file:seek()将返回当前文件位置。调用file:seek("set")将设置到文件的开始(且返回0)
+。调用file:seek("end")将设置位置到文件尾，且返回它的大小。
+    * file:setvbuf(mode [, size])
+    为一个输出文件设置缓冲模式。有三个可用的模式:
+        * "no": 没有缓冲区。任何输出操作的结果立即出现。
+        * "full": full buffering。输出操作仅发生在缓冲区满或者执行flush
+        * "line": line buffering。直到有新行被输出输出才被缓存或者有来自一些特殊文件的输入。
+    对于后两种情况，size指定了缓冲区的大小，字节为单位。默认是合适的大小。
+    * file:write(...)
+    写参数到文件。参数必须是字符串或者数字。
+    在成功的情况下，该函数返回file。否则返回nil加描述错误的字符串。
 6.9 操作系统设备
+    该库通过表os实现。
+    * os.clock()
+    返回被程序使用的CPU时间秒数的近似值。
+    * os.date([format [, time]])
+    返回字符串或者包含date和time的表，按照format格式化的。
+    如果time参数有，这是被格式化的时间(参看os.time函数对该值的描述)。否则，date格式化当前时间。
+    如果format以'!'开头，那么date被格式化为Coordinated Universal Time。在这个可选的字符之后，如果format是"*t"，那么date将返回
+一个拥有如下字段的表:year(四个数字),month(1-12),day(1-31),hour(0-23),min(0-59),sec(0-61),wday(weekday, Sunday是1),yday(day o-
+f the year)和isdst(daylight saving flag，布尔值)。如果信息不可用，最后一个字段可能会缺失。
+    如果format不是"*t"，那么date将按照字符串返回date，按照ANSI C函数strftime格式格式化字符串。
+    当没有参数调用时，date返回一个合理的date和time表达式，按照主机系统和当前的local。
+    在non-Posix系统上，该函数可能不是线程安全的，因为依赖C函数gmtime和C函数localtime。
+    * os.difftime(t2, t1)
+    返回从t1到t2的秒数。在POSIX,Windows和一些其他的系统上，该值是t2-t1。
+    * os.execute([command])
+    该函数和ANSI C函数system是等价的。它传递command来执行一个操作系统调用。如果command执行成功返回的第一个结果是true或者nil。
+在第一个结果之后，返回字符串和数字，如下:
+        * "exit": 命令正常中断。接下来的数字是命令的退出状态。
+        * "signal": 命令被信号中断。接下的数字是中断该命令的信号。
+    如果没有参数被调用，如果shell可用，os.execute返回布尔值。
+    * os.exit([code [, close]])
+    调用ANSI C函数exit中断主程序。如果code是true，返回的状态是EXIT_SUCCESS。如果code是false，返回的状态是EXIT_FAILURE。如果c-
+ode是一个数字，返回的状态是该数字。code的默认值是true。
+    如果可选的第二个参数close是true，在退出前关闭Lua state。
+    * os.getenv(varname)
+    返回程序环境变量varname的值,或者如果值未定义，返回nil。
+    * os.remove(filename)
+    按照被给的名字删除文件。如果函数失败，返回nil加描述错误的字符串和错误代码。
+    * os.rename(oldname, newname)
+    重命名文件或者目录oldname到newname。如果函数失败，返回nil加描述错误的字符串和错误代码。
+    * os.setlocal(local [, category])
+    设置程序的当前locale。locale是指定locale的系统独立的字符串。category是描述哪种category改变的可选字符串:"all","collate","c
+type","monetary", "numeric"或者"time"。默认的category是"all"。该函数返回新的locale的名字或者请求不被满足返回nil。
+    如果locale是空字符串，当前的locale被设置为implementation-defined本地locale。如果locale是字符串"C"，当前的locale被设置为标
+准C locale。
+    当第一个参数是nil调用时，该函数仅返回被给的category当前locale的名字。
+    该函数可能不是线程安全的由于它依赖C函数setlocale。
+    * os.time([table])
+    无参数调用时返回当前时间或者按照给定的table表达date和time的时间。该table必须有字段year,month和day，可以有字段hour(默认是1
+2),min(默认是0),sec(默认是0)和isdst(默认是isdst)。对于这些字段的描述，看os.date函数。
+    返回值是数字，其意义依据你的系统。在POSIX,Windows和一些其他系统上，该值统计了自从上次被给的开始时间的秒数。在其他系统上，
+意义未定且被time返回的值仅被用作os.date和os.difftime的参数。
+    * os.tmpname()
+    返回被临时文件使用的文件名的字符串。该文件必须在使用前明确的打开且不需要时，明确的移除。
+    在POSIX系统上，该函数也创建该名字的文件，为了避免安全风险。
+    可能的情况下，你应该使用io.tmpfile。当程序结束时，自动的删除文件。
 6.10 调式库
+    该库提供了Lua程序的调试接口(4.9)。使用该库时，应谨慎!函数中的几个违反了Lua的基本假定。(例如，在函数内的local变量不能在外
+面访问。userdata的元表不能被Lua代码改变。Lua程序不会崩溃)因此可以妥协否则使用安全代码。此外，库中的一些函数可能性能不高。
+    库中所有的函数在表debug中提供。在一个线程上操作的所有函数都有一个可选的第一个参数。该参数选择操作的线程。
+    * debug.debug()
+    * debug.gethook([thread])
+    * debug.getinfo([thread,] f [, what])
+    * debug.getlocal([thread,] f, local)
+    * debug.getmetatable(value)
+    * debug.getregistry()
+    * debug.getupvalue(f, up)
+    * debug.getuservalue(u)
+    * debug.sethook([thread,] hook, mask [, count])
+    * debug.setlocal([thread,] level, local, value)
+    * debug.setmetatable(value, table)
+    * debug.setupvalue(f, up, value)
+    * debug.setuservalue(udata, value)
+    * debug.traceback([thread,] [message [, level]])
+    * debug.upvalueid(f, n)
+    * debug.upvaluejoin(f1, n1, f2, n2)
