@@ -44,3 +44,239 @@ Lua中的字符串能包含任何8位值，包含嵌入的0，即'\0'。
 行尾。否则是是一个长注释(long comment)，直到相应的关闭长括号为止。长注释通常用来暂时取消代码。
 
 3.2 变量(Variables)
+    变量是存值的地方。在Lua中有三种变量:全局变量(global variables)，局部变量(local variables)和表字段(table fields)。
+    单独的名字意味着全局变量或者局部变量(或者函数的形参(a function's formal parameter)，一种特殊的局部变量):
+        var ::= Name
+    Name是标识符，在3.1中定义。
+    除非显式申明为local，任何变量都假定是global。局部变量的作用域如下: 局部变量可以被定义在他们作用域内的函数自由的访问。(see 
+3.5)。
+    变量赋值之前，值为nil。
+    方括号用来索引表:
+        var ::= prefixexp'['exp']'
+    表字段访问的意义能通过元表改变。对于索引变量t[i]的访问与调用gettable_event(t, i)一样。(see 2.4 对gettable_event函数的完整
+描述。在Lua中该函数未定义或者不可调用。我们在这使用仅为了说明性目的)
+    语法var.Name仅是var["Name"]的语法糖(syntactic sugar)
+        var ::= prefixexp '.' Name
+    对全局变量x的访问和_ENV.x等价。由于代码块被编译的方式，_ENV从来不是全局变量。(see 2.2)
+
+3.3 语句(Statements)
+    Lua支持常规语句集，和在Pascal或者C中的类似。该集合包括赋值(assignments)，控制结构(control structures)，函数调用(function 
+calls)和变量申明(variable declarations)。
+3.3.1 代码段(Blocks)
+    代码段是按顺序执行的一系列申明。
+        block ::= {stat}
+    Lua有空申明(empty statements)，允许以分号分割申明，使用一个分号或者在序列里使用两个分号开始一个代码段:
+        stat ::= ';'
+    函数调用和赋值以一个括号开始。这在Lua语法中导致歧义。考虑如下片段:
+        a = b + c
+        (print or io.write)('done')
+    可以有两种方式解读:
+        a = b + c(print or io.write)('done')
+        a = b + c; (print or io.write)('done')
+    当前的解析器总是以第一种方式解读，将括号解释为参数调用的开始。为了避免这种歧义性，加分号是一个好的习惯:
+        ;(print or io.write)('done')
+    代码段能被分割程单个的语句:
+        stat ::= do block end
+    明确的代码段可以控制变量申明的作用域。明确的代码段有时也被用来在代码块中间添加return语句。(see 3.3.4)
+
+3.3.2 代码块(Chunks)
+    Lua的编译单元称为代码块。语法上，代码块仅仅是一个代码段:
+        chunk ::= block
+    Lua将代码块看做是带有可变参数的匿名函数体。(see 3.4.10)。例如，代码块可以定义局部变量，接收参数和返回值。此外，这种匿名函
+数被编译在额外局部变量_ENV作用域之内。(see 2.2)。结果函数总是使用_ENV作为唯一的upvalue，尽管不使用该变量。
+    代码块可以存储在文件或者是主程序的字符串内。为了执行代码块，Lua首先预编译代码块为虚拟机指令，随后使用虚拟机的解释器执行编
+译的代码。
+    代码块也可以预编译为二进制形式。看程序luac为了详细的细节。源码和编译形式的程序是可交换的。Lua自动识别文件类型且依据类型执
+行。
+
+3.3.3 赋值(Assignment)
+    Lua允许多次分配。因此，赋值的语法在左边定义一系列的变量和在右边定义一系列的表达式。两边的元素以逗号分隔:
+        stat ::= varlist '=' explist
+        varlist ::= var {',' var}
+        explist ::= exp {',' exp}
+    表达式在3.4讨论。
+    在赋值之前，值列表根据变量列表的长度做出合适的调整。如果值多于需要的，多余的值被丢弃。如果值小于需要的，值列表用nil填充。
+如果表达式列表以函数调用结束，那么被该函数返回的所有值进入值列表(在调节之前)。(除了调用被封闭在括号内，see 3.4)
+    赋值语句首先执行所有的表达式，然后执行分配。因此代码
+        i = 3
+        i, a[i] = i+1, 20
+    设置a[3]为20且不影响a[4]因为a[i]中的i在被赋值4之前是待求值的。相似的，
+        x, y = y, x
+    交换了x和y的值，且
+        x, y, z = y, z, x
+    周期性的改变了x, y和z的值。
+    给全局变量和表字段赋值的意义可以通过元表改变。索引变量t[i] = val的赋值和settable_event(t, i, val)等价。
+    全局变量x = val的赋值等价与_ENV.x = val。(see 2.2)
+
+3.3.4 控制结构(Control Structures)
+    控制结构if, while和repeat有通常的意义和相似的语法:
+        stat ::= while exp do block end
+        stat ::= repeat block until exp
+        stat ::= if exp then block {elseif exp then block} {else block} end
+    Lua也有两种方式的for语句。(see 3.3.5)
+    控制结构的条件表达式可以返回任何值。false和nil被认为是false。不同于nil和false所有值被认为是true(特别的，0和空字符串也是t-
+rue)。
+    在repeat-until循环中，内部代码段不在until关键字处结束，而是在条件之后。因此，条件可以指向申明在循环块之内的局部变量。
+    goto语句将程序控制权交给标签(label)。由于语法原因，Lua中的标签也被认为是语句:
+        stat ::= goto Name
+        stat ::= label
+        label ::= '::' Name '::'
+    标签在被定义的整个代码块内可见，除了在内嵌函数内有一个同名的标签。goto可以跳至任何可见的标签除了进入局部变量的作用域。
+    标签和空语句被称为void语句，因为他们不执行任何动作。
+    break语句中断while,repeat或者for循环的执行，跳至循环之后的下一个语句。
+        stat ::= break
+    break结束了最内层的循环。
+    return语句被用来返回来自函数或者代码块(伪装的函数)的值。函数可以返回多个值，因此return语句的语法是
+        stat ::= return [explist] [';']
+    return语句仅能作为代码块最后的语句。如果有必要在代码块中间return，那么使用显式的内部代码块，风格为do return end，因为现在
+return是内部代码块的最后的语句。
+
+3.3.5 For语句(For Statement)
+    for语句有两种形式: 数值型和泛型。
+    数值型for循环重复代码块，控制变量通过数值计算运行。语法如下:
+        stat ::= for Name '=' exp ',' exp [',' exp] do block end
+    代码块循环从第一个exp的值开始，每次递增第三个exp，直至第二个exp。更精确的讲，for语句如下:
+        for v = e1, e2, e3 do block end
+    等价于代码:
+        do
+            local var, limit, step = tonumber(e1), tonumber(e2), tonumber(e3)
+            if not (var and limit and step) then error() end
+            while (step > 0 and var <= limit) or (step <= 0 and var >= limit) do
+                local v = var
+                block
+                var = var + step
+            end
+        end
+    注意如下：
+        * 所有的三个控制表达式在循环开始之前，仅一次求值。必须为数字。
+        * var,limit和step不可见变量。在这使用的名字仅仅是为了解释目的。
+        * 如果第三个表达式缺失，那么step默认是1。
+        * 你只能使用break来退出for循环
+        * 循环变量v只能在循环内使用。你不能在for循环之外使用。如果你需要该值，在退出循环之前将它赋给另一个变量。
+    泛型for语句工作在称为迭代器(iterators)的函数上。每次迭代，迭代函数被调用产生新的值，当新值是nil时停止。泛型for循环有如下
+语法:
+        stat ::= for namelist in explist do block end
+        namelist ::= Name {',' Name}
+    for语句类似
+        for var_1, ..., var_n in explist do block end
+    等价于代码:
+        do
+            local f, s, var = explist
+            while true do
+                local var_1, ..., var_n = f(s, var)
+                if var_1 == nil then break end
+                var = var_1
+                block
+            end
+        end
+    注意如下:
+        * explist仅被赋值一次。它的结果是迭代函数，状态和第一个迭代变量的初始值。
+        * f, s和var是不可见的变量。在这使用的名字仅仅是为了解释目的。
+        * 你可以使用break来退出for循环
+        * 循环变量var_i只能在循环内使用。在for结束后你不能使用他们的值。如果需要这些值，应该在退出循环之前将这些值赋给其他变
+量。
+
+3.3.6 函数调用作为语句(Function Calls as Statements)
+    为了允许可能的副作用，函数调用可以作为语句执行:
+        stat ::= functioncall
+    在这种情况下，所有返回值被丢掉。函数调用在3.4.9中解释。
+
+3.3.7 局部申明(Local Declarations)
+    局部变量可以申明在代码块内的任何地方。申明可以包含一个初始的赋值:
+        stat ::= local namelist ['=' explist]
+    如果存在，初始赋值有多个赋值同样的语义。(see 3.3.3)否则，所有变量初始化为nil。
+    代码段也是一个代码块(see 3.3.2)因此局部变量可以在任何显式的代码块之外的代码段内申明。
+    局部变量的可见规则在3.5解释。
+
+3.4 表达式(Expressions)
+    Lua中的基本表达式如下:
+        exp ::= prefixexp
+        exp ::= nil | false | true
+        exp ::= Number
+        exp ::= String
+        exp ::= functiondef
+        exp ::= tableconstructor
+        exp ::= '...'
+        exp ::= exp binop exp
+        exp ::= unop exp
+        prefixexp ::= var | functioncall | '(' exp ')'
+    数值和字面值字符串在3.1中解释。变量在3.2中解释。函数定义在3.4.10中解释。函数调用在3.4.9中解释。表构造器在3.4.8中解释。被
+三个句号('...')表示的ararg表达式仅能直接在ararg函数内使用。在3.4.10中解释。
+    二元运算符包括算术运算符(see 3.4.1)，关系运算符(see 3.4.3)，逻辑运算符(see 3.4.4)和连接运算符(see 3.4.5)。一元运算符包括
+负号(see 3.4.1)，一元not(see 3.4.4)和一元长度运算符(see 3.4.6)。
+    函数调用和vararg表达式可以产生多个值。如果函数调用被作为语句使用(see 3.3.6)，那么返回列表调整到0个元素，因此删除所有结果
+数据。如果表达式被作为表达式列表的最后一个元素，那么没有调整(除非表达式被括在圆括号内)。在所有其他的上下文中，Lua调整结果列表
+到一个元素，或者删除除第一个元素之外的所有值或者如果没有结果增加一个nil。
+    这是一些例子:
+        f()                 -- 调整到0个结果
+        g(f(), x)           -- f()调整到1个结果
+        g(x, f())           -- g得到x加来自f()的所有结果
+        a, b, c = f(), x    -- f()调整到1个结果(c得到nil)
+        a, b = ...          -- a得到第一个ararg参数，b得到第二个(如果没有相应的ararg参数a和b都得到nil)
+        a, b, c = x, f()    -- f()调整到2个结果
+        a, b, c = f()       -- f()调整到3个结果
+        return f()          -- 返回f()的所有结果
+        return ...          -- 返回所有接收到的ararg参数
+        return x, y, f()    -- 返回x，y和f()的所有结果
+        {f()}               -- 使用f()的结果创建一个列表
+        {...}               -- 使用所有的ararg参数创建一个列表
+        {f(), nil}          -- f()调整到1个结果
+    任何被圆括号括起来的表达式总是得到一个结果。因此(f(x, y, z))总是一个值，尽管f返回多个值。(f(x, y, z)的值是被f返回的第一个
+值或者如果没有返回值则为nil)
+
+3.4.1 算术运算符(Arithmetic Operators)
+    Lua支持一般的算术运算符:二元+(addition),-(subtraction),*(multiplication),/(division),%(modulo),^(exponentiation)。和一元-
+。如果操作数是数字或者是可转化为数字的字符串，那么所有的操作符有通常的意义。幂运算的指数可以是任何数。例如，x^(-0.5)计算x平方
+根的逆。模定义为:
+        a % b == a - math.floor(a/b)*b
+    That is, it is the remainder of a division that rounds the quotient towards minus infinity.
+
+3.4.2 强制类型转换(Coercion)
+    Lua提供了在运行时字符串和数字之间的自动转换。应用到字符串上的任何算术运算符尝试着将字符串转化为数字，遵循Lua词法分析器的
+规则。相反地，当数字被希望以字符串使用时，数字会转化为字符串，以合理的格式。为了完整的控制数字怎样被转化为字符串，使用字符串
+库中的format函数。(see string.format)
+
+3.4.3 关系运算符(Relational Operators)
+    Lua中的关系运算符有
+        == ~= < > <= >=
+    这些操作符总是返回false或者true。
+    ==首先比较操作数的类型。如果类型不同，那么结果是false。否则，操作数的值被比较。数字和字符串以通常的方式比较。table，user-
+data和thread比较引用:两个对象是相等的当且仅当指向的是同一个对象。每次你创建一个对象时(table, userdata, thread)，新的对象不同
+于之前存在的对象。带有相同引用的闭包总是相等的。带有可检测不同(不同的行为，不同的定义)的闭包总是不同的。
+    你能通过使用"eq"元方法改变Lua比较table和userdata的方法。(see 2.4)
+    3.4.2的变换规则不能应用到相等性比较上。因此，"0"==0是false，且t[0]和t["0"]产生表中的不同实体。
+    操作符~=是==的否定。
+    排序操作符工作如下。如果两个参数都是数字，那么他们被比较。否则，如果两个参数都是字符串，那么他们的值按照当前的locale被比
+较。否则，Lua尝试调用"lt"或者"le"元方法。(see 2.4)a > b 被转换为b < a和a >= b 被转换为 b <= a。
+
+3.4.4 逻辑运算符(Logical Operators)
+    Lua中逻辑运算符是and，or和not。像控制结构一样(see 3.3.4)，所有的逻辑操作符任何false和nil是false且其他的都是true。
+    否定操作符not总是返回false或者true。如果该值是false或者nil，连接操作符and返回第一个参数。否则，and返回第二个参数。如果该
+值不同于nil和false，或操作返回第一个值。否则，or返回第二个参数。Both and and or use short-cut evaluation。即，如果必要的话，
+第二个操作数被计算。这是一些例子:
+        10 or 20             --> 10
+        10 or error()        --> 10
+        nil or "a"           --> "a"
+        nil and 10           --> 10
+        false and error()    --> false
+        false and nil        --> false
+        false or nil         --> nil
+        10 and 20            --> 20
+    (在这个指南里，-->表示前面表达式的结果)
+
+3.4.5 连接(Concatenation)
+    Lua里的字符串连接操作符由两个句号('..')指出。如果两个操作数是字符串或者数字，那么依据在3.4.2中提到的规则转化为字符串。否
+则，__concat元方法被调用。(see 2.4)
+
+3.4.6 长度运算符(The Length Operator)
+    长度运算符由一元前缀运算符#引出。字符串的长度是字节的个数(即，当每个字符是一个字节时通常的字符串长度的意义)。
+    程序可以通过__len元方法为任何值(除了字符串)修改长度运算符的行为。(see 2.4)
+    除非__len元方法被给，如果表是一个序列，表t的长度才被定义。即，正整数键的集合是{1..n}。在这种情况下，n是长度。注意如下表
+        {10, 20, nil, 40}
+    不是一个序列，因为它有键4但是没有键3。然而，注意，非数值键不会干扰表是否是一个序列。
+
+3.4.7 优先级(Precedence)
+3.4.8 表构造器(Table Constructors)
+3.4.9 函数调用(Function Calls)
+3.4.10 函数定义(Function Definitions)
+3.5 可见规则(Visibility Rules) 
