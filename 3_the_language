@@ -276,7 +276,142 @@ data和thread比较引用:两个对象是相等的当且仅当指向的是同一
     不是一个序列，因为它有键4但是没有键3。然而，注意，非数值键不会干扰表是否是一个序列。
 
 3.4.7 优先级(Precedence)
+    Lua中操作符的优先级遵循如下顺序，从低优先级到高优先级:
+        or
+        and
+        <   >   <=   >=   ~=   ==
+        ..
+        +   _
+        *   /   %
+        not #   -(unary)
+        ^
+    通常情况下，你可以使用括号改变表达式的优先级。..和^是右结合性，其他的所有二进制操作都是左结合性。
+
 3.4.8 表构造器(Table Constructors)
+    表是创建表的表达式。每次构造器被执行时，新表将被创建。构造器被用来创建一个空表或者创建表和初始化一些字段。构造器通常的语
+法是:
+        tableconstructor ::= '{' [fieldlist] '}'
+        fieldlist : field {fieldsep field} [fieldsep]
+        field ::= '[' exp ']' '=' exp | Name '=' exp | exp
+        fieldsep ::= ',' | ';'
+    形式[exp1] = exp2中的每个字段增加了一个键exp1和值exp2到新表中。形式name=exp中的字段和["name"]=exp等价。最后，形式exp等价
+于[i]=exp，其中i是连续数值整数，从1开始。其他格式中的字段不会影响到该计数。例如:
+        a = {[f(1)]=g; "x", "y"; x = 1, f(x), [30] = 23; 45}
+    等价于
+        do
+            local t = {}
+            t[f(1)] = g
+            t[1] = "x"       -- 1st exp
+            t[2] = "y"       -- 2nd exp
+            t.x = 1          -- t["x"] = 1
+            t[3] = f(x)      -- 3rd exp
+            t[30] = 23
+            t[4] = 45        -- 4th exp
+            a = t
+        end
+    如果列表中的最后一个字段有形式exp和表达式是函数调用或者ararg表达式，那么被该表达式返回的所有值连续的进入列表。(see 3.4.9)
+    The field list can have an optional trailing separator, as a convenience for machine-generated code.
+
 3.4.9 函数调用(Function Calls)
+    Lua中的函数调用有如下语法:
+        functioncall ::= prefixexp args
+    在函数调用中，首先prefixexp和args执行。如果prefixexp的值有类型function，那么该函数使用给定的参数被调用。否则，前缀的"call
+"元方法被调用，prefixexp的值作为第一个参数，后面跟着原始的调用参数(see 2.4)。
+    形式
+        functioncall ::= prefixexp ':' Name args
+    被使用来调用方法。v:name(args)是v.name(v, args)的语法糖，除了v仅被执行一次。
+    参数有如下语法:
+        args ::= '(' [explist] ')'
+        args ::= tableconstructor
+        args ::= String
+    所有的参数表达式在被调用之前被执行。形式f{fields}是f({fields})的语法糖。即，参数列表是单一的新表。形式f'string'(或者f"st-
+ring"或者f[[string]])是f('string')的语法糖。即参数列表是一个单一的字面字符串。
+    return functioncall形式的调用称为尾调用(tail call)。Lua实现了恰当的尾调用(tail calls)(或者恰当的尾递归(tail recursion))。
+在尾调用中，被调用的函数重新使用调用函数的栈实例。因此，对于一个函数可以执行多少次嵌入的尾调用没有限制。然而，尾调用擦除了关
+于调用函数的调试信息。注意尾调用仅发生在一个特定的语法，即return有一个称为参数的单一函数。该语法使调用函数精确地返回了被调用
+函数的返回值。因此，下列例子中没有一个是尾调用:
+        return (f(x))       -- results adjusted to 1
+        return 2 * f(x)
+        return x, f(x)      -- additional results
+        f(x); return        -- results discarded
+        return x or f(x)    -- results adjusted to 1
+
 3.4.10 函数定义(Function Definitions)
-3.5 可见规则(Visibility Rules) 
+    函数定义的语法是
+        functiondef ::= function funcbody
+        funcbody ::= '(' [parlist] ')' block end
+    下列语法糖简化了函数定义:
+        stat ::= function funcname funcbody
+        stat ::= local function Name funcbody
+        funcname ::= Name {'.' Name} [':' Name]
+    申明
+        function f() body end
+    转化为
+        f = function () body end
+    申明
+        function t.a.b.c.f () body end
+    转化为
+        t.a.b.c.f = function () body end
+    申明
+        local function f () body end
+    转化为
+        local f; f = function () body end
+    不是
+        local f = function () body end
+    (当函数体包含引用f时这是不同的。)
+    函数定义是一个可执行的表达式，它的值有类型function。当Lua预编译一个代码块时，所有的函数体也被预编译。随后，无论何时Lua执
+行函数定义时，函数被实例化(或者被关闭)。该函数实例(后者是闭包)是表达式的最终值。
+    形参(Parameters)是局部变量，初始化为参数值:
+        parlist ::= namelist [',' '...'] | '...'
+    当函数被调用时，参数的列表调整到形参列表的长度，除非函数是一个vararg函数，在参数列表的最后由三个点('...')表明的。ararg函
+数不会调整参数列表。相反，它收集所有额外的参数且通过vararg表达式(也被写做三个点)将他们应用到函数。该表达式的值是所有真实额外
+参数的列表，和带有多个结果的函数相似。如果vararg表达式被用在另一个表达式中或者在在表达式列表的中间，那么返回的结果调整到一个
+元素。如果表达式被用作表达式列表的最后一个元素，那么没有调整被做。(除了最后一个表达式被括在括号内)。
+    例如，考虑下列定义:
+        function f(a, b) end
+        funciton g(a, b, ...) end
+        function r() return 1,2,3 end
+    那么，我们有如下的从实参到形参和ararg表达式的映射:
+        CALL           PARAMETERS
+        f(3)           a=3, b=nil
+        f(3, 4)        a=3, b=4
+        f(3, 4, 5)     a=3, b=4
+        f(r(), 10)     a=1, b=10
+        f(r())         a=1, b=2
+        g(3)           a=3, b=nil, ... --> (nothing)
+        g(3, 4)        a=3, b=4,   ... --> (nothing)
+        g(3, 4, 5, 8)  a=3, b=4,   ... --> 5 8
+        g(5, r())      a=5, b=1,   ... --> 2 3
+    结果通过return语句返回(see 3.3.4)。如果控制到达了函数末尾，但是没有遇到return语句，那么函数返回且没有返回结果。
+    对于函数返回值的个数有一个独立于系统的限制。该限制保证在1000以上。
+    冒号语法(colon syntax)被用来定义方法，即有一个隐含的额外的参数self的函数。因此，申明
+        function t.a.b.c:f(params) body end
+    是如下所述的语法糖:
+        t.a.b.c.f = funciton(self, params) body end
+
+3.5 可见规则(Visibility Rules)
+    Lua is a lexically scoped language.局部变量的作用域从申明之后的第一个语句，直到包含该申明的最内存块的非空语句。考虑如下例
+子:
+        x = 10                   -- global variable
+        do                       -- new block
+            local x = x          -- new 'x', with value 10
+            print(x)             --> 10
+            x = x+1
+            do                   -- another block
+                local x = x+1    -- another 'x'
+                print(x)         --> 12
+            end
+            print(x)             --> 11
+        end
+        print(x)                 --> 10 (the global one)
+    注意，像local x = x的申明，被申明的新x还不在作用域内，因此第二个x引用了外面的变量。
+    由于词法作用域规则(the lexical scoping rules)，局部变量能被定义在他们作用域内的函数自由的访问。被内部函数使用的局部变量称
+为upvalue，或者external local variable，在内部函数。
+    注意每一个local语句的执行都定义了新的局部变量。考虑如下例子:
+        a = {}
+        local x = 20
+        for i=1, 10 do
+            local y = 0
+            a[i] = function() y=y+1; return x+y end
+        end
+    该循环创建了10个闭包(即，10个匿名函数的实例)。这些闭包中的每个使用不同的y变量，然而他们共享同一个x。
